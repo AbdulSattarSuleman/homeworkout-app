@@ -21,7 +21,7 @@
 
     <!-- Main Header (Clean, Authentic Layout Matching Original Screenshot) -->
     <header class="hw-app-header">
-      <h1 class="hw-brand-title">HOME WORKOUT</h1>
+      <h1 class="hw-brand-title" onclick="HomeWorkoutApp.goToHome()" style="cursor: pointer;" title="Return to Home Dashboard">HOME WORKOUT</h1>
       <div class="hw-header-right">
         <button class="flame-icon-btn" title="Streak Flame">
           🔥 <span class="streak-count-badge" id="streakFlameNum">18</span>
@@ -128,8 +128,9 @@
       <!-- SCREEN 2: DISCOVER & EXERCISE LIBRARY ('More >' or 'Discover' View) -->
       <section class="screen-view" id="directoryScreen">
         <div class="directory-header-row">
-          <button class="back-arrow-btn" id="directoryBackBtn">←</button>
+          <button class="back-arrow-btn" id="directoryBackBtn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home">←</button>
           <h2 class="directory-title" id="directoryScreenTitle">Discover & Library</h2>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.goToHome()" style="margin-left: auto; cursor: pointer;">🏠 Home</button>
         </div>
 
         <!-- Mode Switcher: Challenges vs Exercise Library -->
@@ -208,27 +209,51 @@
           </div>
         </div>
       </section>
+      
+      <!-- SCREEN 3: WORKOUT REPORT SCREEN -->
+      <section class="screen-view" id="reportScreen" style="padding: 0 18px 24px 18px;">
+        <div class="directory-header-row" style="margin-bottom: 16px;">
+          <button class="back-arrow-btn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home">←</button>
+          <h2 class="directory-title">Workout Report</h2>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.goToHome()" style="margin-left: auto; cursor: pointer;">🏠 Home</button>
+        </div>
+        <div id="reportScreenContent">
+          <!-- Injected dynamically -->
+        </div>
+      </section>
+
+      <!-- SCREEN 4: SETTINGS SCREEN -->
+      <section class="screen-view" id="settingsScreen" style="padding: 0 18px 24px 18px;">
+        <div class="directory-header-row" style="margin-bottom: 16px;">
+          <button class="back-arrow-btn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home">←</button>
+          <h2 class="directory-title">Settings</h2>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.goToHome()" style="margin-left: auto; cursor: pointer;">🏠 Home</button>
+        </div>
+        <div id="settingsScreenContent">
+          <!-- Injected dynamically -->
+        </div>
+      </section>
 
     </div>
 
     <!-- Fixed Bottom Navigation Bar -->
     <nav class="hw-bottom-nav">
-      <button class="hw-nav-btn active" data-tab="training">
+      <button class="hw-nav-btn active" data-tab="training" onclick="HomeWorkoutApp.switchTab('training')" title="Home / Training">
         <svg viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z"/></svg>
         <span>Training</span>
       </button>
 
-      <button class="hw-nav-btn" data-tab="discover">
+      <button class="hw-nav-btn" data-tab="discover" onclick="HomeWorkoutApp.switchTab('discover')" title="Discover & Library">
         <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
         <span>Discover</span>
       </button>
 
-      <button class="hw-nav-btn" data-tab="report">
+      <button class="hw-nav-btn" data-tab="report" onclick="HomeWorkoutApp.switchTab('report')" title="Workout Report">
         <svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg>
         <span>Report</span>
       </button>
 
-      <button class="hw-nav-btn" data-tab="settings">
+      <button class="hw-nav-btn" data-tab="settings" onclick="HomeWorkoutApp.switchTab('settings')" title="Settings">
         <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
         <span>Settings</span>
       </button>

@@ -581,35 +581,51 @@ const HomeWorkoutApp = {
 
   openDirectory(category = 'All', searchQuery = '') {
     this.currentScreen = 'directory';
+    this.currentTab = 'discover';
     this.activeChallengeFilter = category;
 
-    const dashView = document.getElementById('dashboardScreen');
+    // Update bottom nav active state
+    document.querySelectorAll('.hw-nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === 'discover');
+    });
+
+    ['dashboardScreen', 'directoryScreen', 'reportScreen', 'settingsScreen'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('active');
+    });
     const dirView = document.getElementById('directoryScreen');
-    if (dashView && dirView) {
-      dashView.classList.remove('active');
-      dirView.classList.add('active');
-    }
+    if (dirView) dirView.classList.add('active');
 
     this.switchDirectoryMode('challenges');
     this.renderDirectoryFilters();
     this.renderDirectoryCards(searchQuery);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const scrollContainer = document.querySelector('.hw-main-scroll');
+    if (scrollContainer) scrollContainer.scrollTop = 0;
   },
 
   openExerciseExplorer(muscle = 'All', location = 'All') {
     this.currentScreen = 'directory';
+    this.currentTab = 'discover';
     if (muscle) this.explorerMuscle = muscle;
     if (location) this.explorerLocation = location;
 
-    const dashView = document.getElementById('dashboardScreen');
+    // Update bottom nav active state
+    document.querySelectorAll('.hw-nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-tab') === 'discover');
+    });
+
+    ['dashboardScreen', 'directoryScreen', 'reportScreen', 'settingsScreen'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('active');
+    });
     const dirView = document.getElementById('directoryScreen');
-    if (dashView && dirView) {
-      dashView.classList.remove('active');
-      dirView.classList.add('active');
-    }
+    if (dirView) dirView.classList.add('active');
 
     this.switchDirectoryMode('library');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const scrollContainer = document.querySelector('.hw-main-scroll');
+    if (scrollContainer) scrollContainer.scrollTop = 0;
   },
 
   filterExplorerLocation(loc) {
@@ -727,13 +743,7 @@ const HomeWorkoutApp = {
   },
 
   closeDirectory() {
-    this.currentScreen = 'dashboard';
-    const dashView = document.getElementById('dashboardScreen');
-    const dirView = document.getElementById('directoryScreen');
-    if (dashView && dirView) {
-      dirView.classList.remove('active');
-      dashView.classList.add('active');
-    }
+    this.goToHome();
   },
 
   renderDirectoryFilters() {
@@ -1201,106 +1211,142 @@ const HomeWorkoutApp = {
   },
 
   // ========================================================
-  // BOTTOM TAB NAVIGATION
   // ========================================================
+  // NAVIGATION & TAB SWITCHING
+  // ========================================================
+  goToHome() {
+    this.switchTab('training');
+  },
+
   switchTab(tabId) {
     this.currentTab = tabId;
 
+    // Update bottom navigation active button
     document.querySelectorAll('.hw-nav-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === tabId);
     });
 
+    // Hide all 4 top-level screen sections
+    const screens = ['dashboardScreen', 'directoryScreen', 'reportScreen', 'settingsScreen'];
+    screens.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('active');
+    });
+
+    // Activate the selected screen
     if (tabId === 'training') {
-      this.closeDirectory();
+      const dash = document.getElementById('dashboardScreen');
+      if (dash) dash.classList.add('active');
+      this.currentScreen = 'dashboard';
+      this.renderHeader();
+      this.renderWeeklyGoalCard();
+      this.renderBodyFocus();
     } else if (tabId === 'discover') {
+      const dir = document.getElementById('directoryScreen');
+      if (dir) dir.classList.add('active');
+      this.currentScreen = 'directory';
       this.openExerciseExplorer();
     } else if (tabId === 'report') {
+      const rep = document.getElementById('reportScreen');
+      if (rep) rep.classList.add('active');
+      this.currentScreen = 'report';
       this.renderReportScreen();
     } else if (tabId === 'settings') {
+      const set = document.getElementById('settingsScreen');
+      if (set) set.classList.add('active');
+      this.currentScreen = 'settings';
       this.renderSettingsScreen();
     }
+
+    const scrollContainer = document.querySelector('.hw-main-scroll');
+    if (scrollContainer) scrollContainer.scrollTop = 0;
   },
 
   renderReportScreen() {
     const user = HomeWorkoutStore.getUser();
     const logs = HomeWorkoutStore.getWorkoutLogs();
+    const container = document.getElementById('reportScreenContent');
+    if (!container) return;
 
-    const dashView = document.getElementById('dashboardScreen');
-    if (dashView) {
-      dashView.classList.add('active');
-      dashView.innerHTML = `
-        <div style="padding: 18px 0;">
-          <h2 class="section-bold-title" style="margin-bottom: 16px;">Workout Report</h2>
-          <div style="background: #FFFFFF; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
-              <div>
-                <span style="font-size: 0.78rem; color: var(--text-muted);">WORKOUTS</span>
-                <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${logs.length}</div>
-              </div>
-              <div>
-                <span style="font-size: 0.78rem; color: var(--text-muted);">STREAK</span>
-                <div style="font-size: 1.6rem; font-weight: 800; color: var(--accent-flame);">${user.streakCount} Days</div>
-              </div>
-              <div>
-                <span style="font-size: 0.78rem; color: var(--text-muted);">WEEKLY GOAL</span>
-                <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${user.weeklyCompletedCount}/${user.weeklyGoalTarget}</div>
-              </div>
-            </div>
+    container.innerHTML = `
+      <div style="background: #FFFFFF; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+          <div>
+            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">WORKOUTS</span>
+            <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${logs.length}</div>
           </div>
-
-          <h3 class="section-bold-title" style="font-size: 1.05rem; margin-bottom: 12px;">History</h3>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
-            ${logs.length > 0 ? logs.map(l => `
-              <div style="background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow-card); display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <h4 style="font-weight: 800; font-size: 0.95rem;">${l.challengeTitle}</h4>
-                  <span style="font-size: 0.75rem; color: var(--text-muted);">Day ${l.dayNumber} • ${new Date(l.completedAt).toLocaleDateString()}</span>
-                </div>
-                <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
-              </div>
-            `).join('') : `
-              <div style="text-align: center; padding: 30px; color: var(--text-muted);">
-                <p>No workouts completed yet. Start your first session today!</p>
-              </div>
-            `}
+          <div>
+            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">STREAK</span>
+            <div style="font-size: 1.6rem; font-weight: 800; color: var(--accent-flame);">${user.streakCount} Days</div>
+          </div>
+          <div>
+            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">WEEKLY GOAL</span>
+            <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${user.weeklyCompletedCount}/${user.weeklyGoalTarget}</div>
           </div>
         </div>
-      `;
-    }
+      </div>
+
+      <h3 class="section-bold-title" style="font-size: 1.05rem; margin-bottom: 12px;">Workout History</h3>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        ${logs.length > 0 ? logs.map(l => `
+          <div style="background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow-card); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h4 style="font-weight: 800; font-size: 0.95rem;">${l.challengeTitle}</h4>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Day ${l.dayNumber} • ${new Date(l.completedAt).toLocaleDateString()}</span>
+            </div>
+            <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
+          </div>
+        `).join('') : `
+          <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); background: #FFF; border-radius: 16px;">
+            <p style="font-weight: 700; margin-bottom: 6px;">No workouts completed yet</p>
+            <p style="font-size: 0.78rem; margin-bottom: 16px;">Start your first session today to build your streak!</p>
+            <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 200px; margin: 0 auto;" onclick="HomeWorkoutApp.goToHome()">
+              Go to Workouts ➔
+            </button>
+          </div>
+        `}
+      </div>
+    `;
   },
 
   renderSettingsScreen() {
     const user = HomeWorkoutStore.getUser();
-    const dashView = document.getElementById('dashboardScreen');
-    if (dashView) {
-      dashView.classList.add('active');
-      dashView.innerHTML = `
-        <div style="padding: 18px 0;">
-          <h2 class="section-bold-title" style="margin-bottom: 16px;">Settings</h2>
-          <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 12px;">
-              <div>
-                <h4 style="font-weight: 800; font-size: 1rem;">PRO Subscription</h4>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">${user.isPro ? 'Active Member' : 'Free Plan'}</span>
-              </div>
-              <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()">
-                ${user.isPro ? 'MANAGE' : 'UPGRADE ↗'}
-              </button>
-            </div>
+    const container = document.getElementById('settingsScreenContent');
+    if (!container) return;
 
-            <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
-              <div>
-                <h4 style="font-weight: 800; font-size: 1rem;">Reset All Progress</h4>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">Restore original 0/5 state</span>
-              </div>
-              <button class="fw-start-btn" style="background: #FEE2E2; color: #DC2626;" onclick="HomeWorkoutApp.resetData()">
-                RESET
-              </button>
-            </div>
+    container.innerHTML = `
+      <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
+          <div>
+            <h4 style="font-weight: 800; font-size: 1rem;">Fitness Level</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Current: ${user.fitnessLevel || 'Intermediate'}</span>
           </div>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openLevelModal()">
+            Change ▾
+          </button>
         </div>
-      `;
-    }
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
+          <div>
+            <h4 style="font-weight: 800; font-size: 1rem;">PRO Subscription</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">${user.isPro ? 'Active Member' : 'Free Plan'}</span>
+          </div>
+          <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()">
+            ${user.isPro ? 'MANAGE' : 'UPGRADE ↗'}
+          </button>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
+          <div>
+            <h4 style="font-weight: 800; font-size: 1rem;">Reset All Progress</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Restore original 0/5 state</span>
+          </div>
+          <button class="fw-start-btn" style="background: #FEE2E2; color: #DC2626;" onclick="HomeWorkoutApp.resetData()">
+            RESET
+          </button>
+        </div>
+      </div>
+    `;
   },
 
   resetData() {
