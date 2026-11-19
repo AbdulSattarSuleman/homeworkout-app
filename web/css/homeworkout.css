@@ -1582,3 +1582,115 @@ body {
   font-weight: 600;
 }
 
+/* ======================================================== */
+/* USER ACCOUNT BADGE & AUTH MODAL                         */
+/* ======================================================== */
+.user-badge-btn {
+  background: #EFF6FF;
+  border: 1px solid rgba(0, 82, 255, 0.2);
+  color: var(--brand-blue);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.user-badge-btn:hover {
+  background: var(--brand-blue);
+  color: #FFFFFF;
+}
+
+/* Timeline Period Groupings */
+.timeline-group-header {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 16px 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline-card {
+  background: #FFFFFF;
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.timeline-card-meta {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.timeline-accordion-btn {
+  background: #F3F4F6;
+  border: none;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4B5563;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  transition: all 0.15s ease;
+}
+
+.timeline-accordion-btn:hover {
+  background: #E5E7EB;
+  color: var(--text-main);
+}
+
+.timeline-exercises-list {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-divider);
+}
+
+.timeline-exercises-list.open {
+  display: flex;
+}
+
+.timeline-ex-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.timeline-ex-item-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand-blue);
+}
+
+

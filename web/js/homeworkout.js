@@ -26,13 +26,23 @@ const HomeWorkoutApp = {
   timerInterval: null,
   isPaused: false,
 
-  init() {
+  async init() {
     this.activeFocusLevel = HomeWorkoutStore.getUserLevel();
     this.renderHeader();
     this.renderWeeklyGoalCard();
     this.renderChallengeCarousel();
     this.renderBodyFocus();
     this.bindEvents();
+
+    // Background sync user session from server if token exists
+    try {
+      const serverUser = await HomeWorkoutStore.syncSession();
+      if (serverUser) {
+        this.renderHeader();
+        this.renderWeeklyGoalCard();
+        this.renderBodyFocus();
+      }
+    } catch (e) {}
   },
 
   onDatabaseLoaded() {
@@ -111,6 +121,11 @@ const HomeWorkoutApp = {
     
     const streakEl = document.getElementById('streakFlameNum');
     if (streakEl) streakEl.textContent = user.streakCount;
+
+    const userNameEl = document.getElementById('headerUserName');
+    if (userNameEl) {
+      userNameEl.textContent = user.username || 'Sign In';
+    }
 
     const proBtn = document.getElementById('headerProBtn');
     if (proBtn) {
@@ -1103,7 +1118,7 @@ const HomeWorkoutApp = {
 
     if (isDaily) {
       const exerciseIds = this.activeWorkout.exercises.map(e => e.id);
-      result = HomeWorkoutStore.logMuscleSessionCompleted(this.activeWorkout.muscle, exerciseIds);
+      result = HomeWorkoutStore.logMuscleSessionCompleted(this.activeWorkout.muscle, exerciseIds, this.activeWorkout.exercises);
     } else if (isSingle && this.activeWorkout.exercises && this.activeWorkout.exercises.length > 0) {
       const ex = this.activeWorkout.exercises[0];
       result = HomeWorkoutStore.logSingleExerciseCompleted(ex, this.activeWorkout.muscle);
@@ -1274,18 +1289,118 @@ const HomeWorkoutApp = {
     if (scrollContainer) scrollContainer.scrollTop = 0;
   },
 
-  renderReportScreen() {
+  async renderReportScreen() {
     const user = HomeWorkoutStore.getUser();
-    const logs = HomeWorkoutStore.getWorkoutLogs();
     const container = document.getElementById('reportScreenContent');
     if (!container) return;
 
     container.innerHTML = `
-      <div style="background: #FFFFFF; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
+      <div style="text-align: center; padding: 28px; color: var(--text-muted); font-size: 0.85rem;">
+        ⌛ Syncing timeline history...
+      </div>
+    `;
+
+    const timeline = await HomeWorkoutStore.getTimelineHistory();
+    const allLogs = timeline.all_logs || [];
+
+    function renderLogCards(logsList) {
+      if (!logsList || logsList.length === 0) return '';
+      return logsList.map(l => {
+        const timeStr = l.completedAt ? new Date(l.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const dateStr = l.completedAt ? new Date(l.completedAt).toLocaleDateString() : '';
+        const exCount = l.exercises ? l.exercises.length : 0;
+        return `
+          <div class="timeline-card">
+            <div class="timeline-card-header">
+              <div>
+                <h4 style="font-weight: 800; font-size: 0.95rem; margin: 0; color: var(--text-main);">${l.challengeTitle || l.workout_title}</h4>
+                <div class="timeline-card-meta">
+                  ${dateStr} ${timeStr ? '• ' + timeStr : ''} • ${l.durationMinutes || 18} Min • ${l.caloriesBurned || 140} kcal
+                </div>
+              </div>
+              <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
+            </div>
+            ${exCount > 0 ? `
+              <button class="timeline-accordion-btn" onclick="HomeWorkoutApp.toggleTimelineAccordion('${l.id}')">
+                <span>▶ View ${exCount} Exercises</span>
+              </button>
+              <div class="timeline-exercises-list" id="tl-ex-${l.id}">
+                ${l.exercises.map(ex => `
+                  <div class="timeline-ex-item">
+                    <span class="timeline-ex-item-dot"></span>
+                    <span>${ex.name}</span>
+                    ${ex.target ? `<span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">(🎯 ${ex.target})</span>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    const hasAny = allLogs.length > 0;
+
+    let historySectionsHtml = '';
+    if (hasAny) {
+      if (timeline.today && timeline.today.length > 0) {
+        historySectionsHtml += `
+          <div class="timeline-group-header">⚡ Today's Sessions (${timeline.today.length})</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${renderLogCards(timeline.today)}
+          </div>
+        `;
+      }
+      if (timeline.yesterday && timeline.yesterday.length > 0) {
+        historySectionsHtml += `
+          <div class="timeline-group-header">📅 Yesterday / Last Day (${timeline.yesterday.length})</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${renderLogCards(timeline.yesterday)}
+          </div>
+        `;
+      }
+      if (timeline.this_week && timeline.this_week.length > 0) {
+        historySectionsHtml += `
+          <div class="timeline-group-header">🗓️ Earlier This Week (${timeline.this_week.length})</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${renderLogCards(timeline.this_week)}
+          </div>
+        `;
+      }
+      if (timeline.last_week && timeline.last_week.length > 0) {
+        historySectionsHtml += `
+          <div class="timeline-group-header">📆 Last Week (${timeline.last_week.length})</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${renderLogCards(timeline.last_week)}
+          </div>
+        `;
+      }
+      if (timeline.older && timeline.older.length > 0) {
+        historySectionsHtml += `
+          <div class="timeline-group-header">📦 Older Workouts (${timeline.older.length})</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${renderLogCards(timeline.older)}
+          </div>
+        `;
+      }
+    } else {
+      historySectionsHtml = `
+        <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); background: #FFF; border-radius: 16px; margin-top: 10px;">
+          <p style="font-weight: 700; margin-bottom: 6px;">No workout sessions logged yet</p>
+          <p style="font-size: 0.78rem; margin-bottom: 16px;">Complete your first workout to see your daily & weekly timeline!</p>
+          <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 200px; margin: 0 auto;" onclick="HomeWorkoutApp.goToHome()">
+            Go to Workouts ➔
+          </button>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div style="background: #FFFFFF; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-card); margin-bottom: 12px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
           <div>
             <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">WORKOUTS</span>
-            <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${logs.length}</div>
+            <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${allLogs.length}</div>
           </div>
           <div>
             <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">STREAK</span>
@@ -1298,40 +1413,123 @@ const HomeWorkoutApp = {
         </div>
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 class="section-bold-title" style="font-size: 1.05rem; margin: 0;">Workout History</h3>
-        ${logs.length > 0 ? `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 class="section-bold-title" style="font-size: 1.05rem; margin: 0;">Workout Timeline</h3>
+        ${hasAny ? `
           <button onclick="HomeWorkoutApp.clearReportHistory()" style="background: #FEE2E2; color: #DC2626; border: none; font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; cursor: pointer;">
             🗑️ Clear History
           </button>
         ` : ''}
       </div>
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        ${logs.length > 0 ? logs.map(l => `
-          <div style="background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow-card); display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <h4 style="font-weight: 800; font-size: 0.95rem;">${l.challengeTitle}</h4>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">Day ${l.dayNumber} • ${new Date(l.completedAt).toLocaleDateString()}</span>
-            </div>
-            <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
-          </div>
-        `).join('') : `
-          <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); background: #FFF; border-radius: 16px;">
-            <p style="font-weight: 700; margin-bottom: 6px;">No workouts completed yet</p>
-            <p style="font-size: 0.78rem; margin-bottom: 16px;">Start your first session today to build your streak!</p>
-            <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 200px; margin: 0 auto;" onclick="HomeWorkoutApp.goToHome()">
-              Go to Workouts ➔
-            </button>
-          </div>
-        `}
-      </div>
+
+      ${historySectionsHtml}
     `;
+  },
+
+  toggleTimelineAccordion(logId) {
+    const list = document.getElementById(`tl-ex-${logId}`);
+    if (list) {
+      list.classList.toggle('open');
+    }
   },
 
   clearReportHistory() {
     if (confirm('Clear your completed workout history?')) {
       HomeWorkoutStore.clearWorkoutLogs();
       this.renderReportScreen();
+    }
+  },
+
+  // ========================================================
+  // USER ACCOUNT & CLOUD SESSION SYNC MODAL
+  // ========================================================
+  authMode: 'login',
+
+  openAuthModal() {
+    const user = HomeWorkoutStore.getUser();
+    const token = HomeWorkoutStore.getToken();
+    const modal = document.getElementById('authModalBackdrop');
+    const loggedInView = document.getElementById('authLoggedInView');
+    const formView = document.getElementById('authFormView');
+    const usernameEl = document.getElementById('authLoggedInUsername');
+    const avatarEl = document.getElementById('authAvatarLetter');
+
+    if (token && user.username) {
+      if (loggedInView) loggedInView.style.display = 'block';
+      if (formView) formView.style.display = 'none';
+      if (usernameEl) usernameEl.textContent = user.username;
+      if (avatarEl) avatarEl.textContent = (user.username[0] || 'A').toUpperCase();
+    } else {
+      if (loggedInView) loggedInView.style.display = 'none';
+      if (formView) formView.style.display = 'block';
+      this.switchAuthMode('login');
+    }
+
+    if (modal) modal.classList.add('active');
+  },
+
+  closeAuthModal() {
+    const modal = document.getElementById('authModalBackdrop');
+    if (modal) modal.classList.remove('active');
+  },
+
+  switchAuthMode(mode) {
+    this.authMode = mode;
+    const loginBtn = document.getElementById('authTabLoginBtn');
+    const regBtn = document.getElementById('authTabRegisterBtn');
+    const submitBtn = document.getElementById('authSubmitBtn');
+    if (loginBtn) loginBtn.classList.toggle('active', mode === 'login');
+    if (regBtn) regBtn.classList.toggle('active', mode === 'register');
+    if (submitBtn) submitBtn.textContent = mode === 'login' ? 'Sign In' : 'Create Account';
+  },
+
+  async submitAuthForm() {
+    const usernameInput = document.getElementById('authUsernameInput');
+    const passwordInput = document.getElementById('authPasswordInput');
+    const u = usernameInput ? usernameInput.value.trim() : '';
+    const p = passwordInput ? passwordInput.value.trim() : '';
+
+    if (!u || !p) {
+      alert('Please enter both username and password.');
+      return;
+    }
+
+    try {
+      if (this.authMode === 'login') {
+        await HomeWorkoutStore.login(u, p);
+      } else {
+        await HomeWorkoutStore.register(u, p, this.activeFocusLevel);
+      }
+      this.closeAuthModal();
+      this.renderHeader();
+      this.renderWeeklyGoalCard();
+      this.renderBodyFocus();
+      alert(`🎉 Welcome ${u}! Your workout sessions and streaks are now connected and syncing across your phone and gym.`);
+    } catch (err) {
+      alert(err.message || 'Authentication error.');
+    }
+  },
+
+  async handle1TapGuestLogin() {
+    try {
+      const data = await HomeWorkoutStore.guestLogin();
+      this.closeAuthModal();
+      this.renderHeader();
+      this.renderWeeklyGoalCard();
+      this.renderBodyFocus();
+      alert(`⚡ 1-Tap Gym Session Connected as "${data.user.username}"! Ready to train.`);
+    } catch (err) {
+      alert('Could not start 1-tap gym session: ' + err.message);
+    }
+  },
+
+  handleLogout() {
+    if (confirm('Log out of this device?')) {
+      HomeWorkoutStore.logout();
+      this.closeAuthModal();
+      this.renderHeader();
+      this.renderWeeklyGoalCard();
+      this.renderBodyFocus();
     }
   },
 

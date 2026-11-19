@@ -3,7 +3,143 @@ const HomeWorkoutStore = {
   KEYS: {
     USER_PROGRESS: 'hw_user_progress',
     WORKOUT_LOGS: 'hw_workout_logs',
-    CHALLENGES: 'hw_challenges'
+    CHALLENGES: 'hw_challenges',
+    AUTH_TOKEN: 'hw_auth_token'
+  },
+
+  getToken() {
+    try {
+      return localStorage.getItem(this.KEYS.AUTH_TOKEN);
+    } catch (e) {
+      return null;
+    }
+  },
+
+  setToken(token) {
+    try {
+      if (token) {
+        localStorage.setItem(this.KEYS.AUTH_TOKEN, token);
+      } else {
+        localStorage.removeItem(this.KEYS.AUTH_TOKEN);
+      }
+    } catch (e) {}
+  },
+
+  async apiRequest(endpoint, method = 'GET', body = null) {
+    const token = this.getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const opts = { method, headers };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(endpoint, opts);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (e) {
+      console.warn(`[Store API] ${method} ${endpoint} failed:`, e.message);
+      return null;
+    }
+  },
+
+  async register(username, password, fitnessLevel = 'Intermediate') {
+    const data = await this.apiRequest('/api/auth/register', 'POST', {
+      username,
+      password,
+      fitness_level: fitnessLevel
+    });
+    if (data && data.token) {
+      this.setToken(data.token);
+      this.syncUserFromServer(data.user);
+      return data;
+    }
+    throw new Error('Registration failed');
+  },
+
+  async login(username, password) {
+    const data = await this.apiRequest('/api/auth/login', 'POST', { username, password });
+    if (data && data.token) {
+      this.setToken(data.token);
+      this.syncUserFromServer(data.user);
+      return data;
+    }
+    throw new Error('Invalid username or password');
+  },
+
+  async guestLogin() {
+    const data = await this.apiRequest('/api/auth/guest', 'POST');
+    if (data && data.token) {
+      this.setToken(data.token);
+      this.syncUserFromServer(data.user);
+      return data;
+    }
+    throw new Error('Guest login failed');
+  },
+
+  async syncSession() {
+    const token = this.getToken();
+    if (!token) return null;
+    const data = await this.apiRequest('/api/auth/me', 'GET');
+    if (data && data.user) {
+      this.syncUserFromServer(data.user);
+      return data.user;
+    }
+    return null;
+  },
+
+  syncUserFromServer(serverUser) {
+    const user = this.getUser();
+    user.id = serverUser.id;
+    user.username = serverUser.username;
+    user.name = serverUser.username;
+    user.fitnessLevel = serverUser.fitness_level || user.fitnessLevel;
+    user.isPro = Boolean(serverUser.is_pro);
+    user.streakCount = serverUser.streak_count || 0;
+    user.weeklyGoalTarget = serverUser.weekly_goal_target || 5;
+    user.weeklyCompletedCount = serverUser.weekly_completed_count || 0;
+    this.saveUser(user);
+    return user;
+  },
+
+  logout() {
+    this.apiRequest('/api/auth/logout', 'POST');
+    this.setToken(null);
+    const user = this.getUser();
+    user.username = null;
+    user.name = 'Athlete';
+    this.saveUser(user);
+  },
+
+  getUser() {
+    try {
+      const data = localStorage.getItem(this.KEYS.USER_PROGRESS);
+      return data ? JSON.parse(data) : this.initialState.user;
+    } catch (e) {
+      return this.initialState.user;
+    }
+  },
+
+  saveUser(user) {
+    try {
+      user.updatedAt = new Date().toISOString();
+      localStorage.setItem(this.KEYS.USER_PROGRESS, JSON.stringify(user));
+    } catch (e) {
+      console.warn('Failed to save user:', e);
+    }
+  },
+
+  updateWeeklyGoal(target) {
+    const user = this.getUser();
+    user.weeklyGoalTarget = Math.max(1, Math.min(7, parseInt(target, 10)));
+    this.saveUser(user);
+    // Background sync to cloud
+    if (this.getToken()) {
+      this.apiRequest('/api/user/goal', 'PATCH', { target: user.weeklyGoalTarget });
+    }
+    return user;
   },
 
   // Initial Seed Data matching screenshots exactly
@@ -387,6 +523,17 @@ const HomeWorkoutStore = {
       console.warn('Failed to save logs:', e);
     }
 
+    // Cloud background sync
+    this.logWorkoutSessionToCloud({
+      workoutId: challengeId,
+      title: title,
+      muscle: challenge ? challenge.metrics.targetArea : 'Workout',
+      dayNumber: dayNumber,
+      durationMinutes: 18,
+      caloriesBurned: 145,
+      exercises: challenge ? challenge.exercises : []
+    });
+
     return { user, log: newLog };
   },
 
@@ -411,14 +558,16 @@ const HomeWorkoutStore = {
 
     // Save to workout history logs with the EXACT exercise name and muscle
     const logs = this.getWorkoutLogs();
+    const title = `${exercise.name} (${muscle.toUpperCase()})`;
     const newLog = {
       id: 'log_' + Date.now(),
       challengeId: `ex-${exercise.id}`,
-      challengeTitle: `${exercise.name} (${muscle.toUpperCase()})`,
+      challengeTitle: title,
       dayNumber: 1,
       completedAt: new Date().toISOString(),
       durationMinutes: Math.round((exercise.durationSeconds || 40) / 60) || 4,
-      caloriesBurned: 35
+      caloriesBurned: 35,
+      exercises: [exercise]
     };
     logs.unshift(newLog);
 
@@ -427,6 +576,17 @@ const HomeWorkoutStore = {
     } catch (e) {
       console.warn('Failed to save log:', e);
     }
+
+    // Cloud background sync
+    this.logWorkoutSessionToCloud({
+      workoutId: `ex-${exercise.id}`,
+      title: title,
+      muscle: muscle,
+      dayNumber: 1,
+      durationMinutes: Math.round((exercise.durationSeconds || 40) / 60) || 4,
+      caloriesBurned: 35,
+      exercises: [exercise]
+    });
 
     return { user, log: newLog };
   },
@@ -561,7 +721,7 @@ const HomeWorkoutStore = {
     };
   },
 
-  logMuscleSessionCompleted(muscle, exerciseIds) {
+  logMuscleSessionCompleted(muscle, exerciseIds, exercises = []) {
     const user = this.getUser();
     if (!user.completedMuscleHistory) user.completedMuscleHistory = {};
     const mKey = muscle.toLowerCase();
@@ -581,14 +741,16 @@ const HomeWorkoutStore = {
 
     // Save to workout history logs
     const logs = this.getWorkoutLogs();
+    const title = `${muscle.toUpperCase()} Routine (5 Exercises)`;
     const newLog = {
       id: 'log_' + Date.now(),
       challengeId: `daily-${mKey}`,
-      challengeTitle: `${muscle.toUpperCase()} Daily Session (5 Exercises)`,
+      challengeTitle: title,
       dayNumber: 1,
       completedAt: new Date().toISOString(),
       durationMinutes: 20,
-      caloriesBurned: 165
+      caloriesBurned: 165,
+      exercises: exercises
     };
     logs.unshift(newLog);
 
@@ -598,7 +760,49 @@ const HomeWorkoutStore = {
       console.warn('Failed to save log:', e);
     }
 
+    // Cloud background sync
+    this.logWorkoutSessionToCloud({
+      workoutId: `daily-${mKey}`,
+      title: title,
+      muscle: muscle,
+      dayNumber: 1,
+      durationMinutes: 20,
+      caloriesBurned: 165,
+      exercises: exercises
+    });
+
     return { user, log: newLog };
+  },
+
+  async logWorkoutSessionToCloud({ workoutId, title, muscle, dayNumber, durationMinutes, caloriesBurned, exercises }) {
+    if (!this.getToken()) return null;
+    return await this.apiRequest('/api/workouts/complete', 'POST', {
+      workout_id: workoutId,
+      workout_title: title,
+      muscle_group: muscle,
+      day_number: dayNumber || 1,
+      duration_minutes: durationMinutes || 18,
+      calories_burned: caloriesBurned || 145,
+      exercises: exercises || []
+    });
+  },
+
+  async getTimelineHistory() {
+    if (this.getToken()) {
+      const data = await this.apiRequest('/api/workouts/history', 'GET');
+      if (data && data.today) {
+        return data;
+      }
+    }
+    const local = this.getWorkoutLogs();
+    return {
+      today: local.slice(0, 5),
+      yesterday: [],
+      this_week: [],
+      last_week: [],
+      older: [],
+      all_logs: local
+    };
   }
 };
 

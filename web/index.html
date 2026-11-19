@@ -24,7 +24,10 @@
       <h1 class="hw-brand-title" onclick="HomeWorkoutApp.goToHome()" style="cursor: pointer;" title="Return to Home Dashboard">HOME WORKOUT</h1>
       <div class="hw-header-right">
         <button class="flame-icon-btn" title="Streak Flame">
-          🔥 <span class="streak-count-badge" id="streakFlameNum">18</span>
+          🔥 <span class="streak-count-badge" id="streakFlameNum">0</span>
+        </button>
+        <button class="user-badge-btn" id="headerUserBtn" onclick="HomeWorkoutApp.openAuthModal()" title="User Account & Cloud Sync">
+          👤 <span id="headerUserName">Sign In</span>
         </button>
         <button class="pro-badge-btn" id="headerProBtn">
           👑 PRO ↗
@@ -427,6 +430,68 @@
       <!-- Scrollable Replacement Pool List -->
       <div class="swap-options-list" id="swapOptionsList" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; max-height: 330px; padding-bottom: 10px;">
         <!-- Injected dynamically -->
+      </div>
+    </div>
+  <!-- MODAL: USER ACCOUNT & CLOUD SESSION SYNC -->
+  <div class="bottom-sheet-backdrop" id="authModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeAuthModal()">
+    <div class="bottom-sheet-box" style="max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 class="sheet-title" style="margin: 0;" id="authModalTitle">User Account & Sync</h3>
+        <button class="runner-close-btn" onclick="HomeWorkoutApp.closeAuthModal()" style="font-size: 1.1rem; padding: 4px 8px; border: none; background: transparent; cursor: pointer;">✕</button>
+      </div>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 14px;">
+        Sync your streaks, weekly goals, and workout history across your phone and gym sessions.
+      </p>
+
+      <!-- If Logged In View -->
+      <div id="authLoggedInView" style="display: none;">
+        <div style="background: #F8FAFC; border: 1px solid var(--border-subtle); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: var(--brand-blue); color: #FFF; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: 800;" id="authAvatarLetter">
+              A
+            </div>
+            <div style="flex: 1;">
+              <div style="font-weight: 800; font-size: 1rem; color: var(--text-main);" id="authLoggedInUsername">Athlete</div>
+              <div style="font-size: 0.75rem; color: #10B981; font-weight: 700;">● Cloud Connected & Syncing</div>
+            </div>
+          </div>
+        </div>
+        <button class="start-day-pill-btn" style="background: #FEE2E2; color: #DC2626; border: none;" onclick="HomeWorkoutApp.handleLogout()">
+          Log Out
+        </button>
+      </div>
+
+      <!-- If Not Logged In View -->
+      <div id="authFormView">
+        <div class="mode-tab-switcher" style="margin-bottom: 14px;">
+          <button class="mode-tab-btn active" id="authTabLoginBtn" onclick="HomeWorkoutApp.switchAuthMode('login')">
+            Sign In
+          </button>
+          <button class="mode-tab-btn" id="authTabRegisterBtn" onclick="HomeWorkoutApp.switchAuthMode('register')">
+            Create Account
+          </button>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+          <div>
+            <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Username</label>
+            <input type="text" id="authUsernameInput" class="hw-search-input" placeholder="e.g. gym_athlete" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;">
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Password</label>
+            <input type="password" id="authPasswordInput" class="hw-search-input" placeholder="••••••••" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;">
+          </div>
+        </div>
+
+        <button class="start-day-pill-btn" id="authSubmitBtn" style="background: var(--brand-blue); color: #FFF; margin-bottom: 12px;" onclick="HomeWorkoutApp.submitAuthForm()">
+          Sign In
+        </button>
+
+        <div style="text-align: center; margin: 6px 0; color: var(--text-muted); font-size: 0.75rem; font-weight: 700;">— OR —</div>
+
+        <button class="start-day-pill-btn" style="background: #F3F4F6; color: var(--text-main); border: 1px solid #E5E7EB;" onclick="HomeWorkoutApp.handle1TapGuestLogin()">
+          ⚡ Quick Gym Sign In (1-Tap, No Password)
+        </button>
       </div>
     </div>
   </div>
