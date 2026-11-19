@@ -1,0 +1,21 @@
+{
+  "name": "Cali Move Workouts",
+  "short_name": "Cali Move",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0d14",
+  "theme_color": "#0a0d14",
+  "description": "Calisthenics Movement Workout & Training Application",
+  "icons": [
+    {
+      "src": "assets/images/app_icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/images/app_icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

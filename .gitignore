@@ -1,0 +1,12 @@
+# Ignore large APK binary and tunnel executable
+*.xapk
+*.apk
+cloudflared.exe
+extracted/
+
+# Windows & IDE artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/

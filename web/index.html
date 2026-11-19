@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HOME WORKOUT</title>
+  <link rel="icon" type="image/png" href="assets/images/app_icon.png">
+  
+  <!-- Plus Jakarta Sans Font for Authentic Mobile Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- Pixel-Accurate Stylesheet -->
+  <link rel="stylesheet" href="css/homeworkout.css">
+</head>
+<body>
+
+  <!-- Authentic Mobile Phone Frame Container (420px) -->
+  <div class="hw-phone-viewport">
+
+    <!-- Main Header -->
+    <header class="hw-app-header">
+      <h1 class="hw-brand-title">HOME WORKOUT</h1>
+      <div class="hw-header-right">
+        <button class="level-badge-btn" id="headerLevelBtn" onclick="HomeWorkoutApp.openLevelModal()" title="Change Fitness Level">
+          🟡 Intermediate ▾
+        </button>
+        <button class="flame-icon-btn" title="Streak Flame">
+          🔥
+        </button>
+        <button class="pro-badge-btn" id="headerProBtn">
+          👑 PRO ↗
+        </button>
+      </div>
+    </header>
+
+    <!-- Search Bar -->
+    <div class="hw-search-section">
+      <div class="hw-search-box">
+        <svg class="search-icon-svg" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" class="hw-search-input" id="hwSearchInput" placeholder="Search workouts, plans...">
+      </div>
+    </div>
+
+    <!-- Scrollable Main Container -->
+    <div class="hw-main-scroll">
+      
+      <!-- SCREEN 1: DASHBOARD (Active by Default) -->
+      <section class="screen-view active" id="dashboardScreen">
+        
+        <!-- Weekly Goal Card -->
+        <div class="weekly-goal-card">
+          <div class="wg-header-row">
+            <span class="wg-title">Weekly Goal</span>
+            <div class="wg-counter-wrap" id="editGoalPencilBtn" title="Edit Weekly Goal">
+              <span class="wg-counter-text">
+                <strong class="wg-count-active" id="wgCountActive">0</strong><span id="wgTargetTotal">/5</span>
+              </span>
+              <span class="wg-edit-pencil">✎</span>
+            </div>
+          </div>
+
+          <!-- 7-Day Date Strip: 16 to 22 (Day 18 highlighted) -->
+          <div class="wg-date-strip" id="wgDateStrip">
+            <!-- Injected dynamically -->
+          </div>
+
+          <!-- Triangular Pointer -->
+          <div class="coach-bubble-pointer-wrap">
+            <div class="coach-pointer-triangle"></div>
+          </div>
+
+          <!-- Coach Motivation Banner -->
+          <div class="coach-banner">
+            <div class="coach-avatar-box" id="coachAvatarBox">
+              <!-- SVG Coach Avatar -->
+            </div>
+            <p class="coach-quote-text">
+              Your workout awaits you! Time to make the first step!
+            </p>
+          </div>
+        </div>
+
+        <!-- Challenge Section Header -->
+        <div class="challenge-section-header">
+          <h2 class="section-bold-title">Challenge</h2>
+          <a class="more-link-btn" id="challengeMoreBtn">More ❯</a>
+        </div>
+
+        <!-- Horizontal Swipe Carousel -->
+        <div class="challenge-carousel" id="challengeCarousel">
+          <!-- Injected dynamically -->
+        </div>
+
+        <!-- Body Focus & Muscle Explorer Section -->
+        <div class="body-focus-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h2 class="section-bold-title">Body Focus & Muscles</h2>
+            <button class="more-link-btn" onclick="HomeWorkoutApp.openExerciseExplorer()" style="font-size: 0.8rem; background: transparent; border: none; cursor: pointer; color: var(--brand-blue); font-weight: 700;">
+              All 1,324 Exercises ❯
+            </button>
+          </div>
+
+          <!-- Location Selector: Home vs Gym -->
+          <div class="location-toggle-row" id="bodyFocusLocationRow">
+            <button class="loc-toggle-btn active" data-loc="Home" onclick="HomeWorkoutApp.switchFocusLocation('Home')">
+              🏠 Home (No Gear)
+            </button>
+            <button class="loc-toggle-btn" data-loc="Gym" onclick="HomeWorkoutApp.switchFocusLocation('Gym')">
+              🏋️ Gym (Equipment)
+            </button>
+            <button class="loc-toggle-btn" data-loc="All" onclick="HomeWorkoutApp.switchFocusLocation('All')">
+              🌐 All
+            </button>
+          </div>
+
+          <!-- Level Selector: Beginner / Intermediate / Advanced -->
+          <div class="level-toggle-row" id="bodyFocusLevelRow">
+            <button class="level-pill-btn active" data-lvl="Intermediate" onclick="HomeWorkoutApp.switchFocusLevel('Intermediate')">
+              🟡 Intermediate
+            </button>
+            <button class="level-pill-btn" data-lvl="Beginner" onclick="HomeWorkoutApp.switchFocusLevel('Beginner')">
+              🟢 Beginner
+            </button>
+            <button class="level-pill-btn" data-lvl="Advanced" onclick="HomeWorkoutApp.switchFocusLevel('Advanced')">
+              🔴 Advanced
+            </button>
+            <button class="level-pill-btn" data-lvl="All" onclick="HomeWorkoutApp.switchFocusLevel('All')">
+              All Levels
+            </button>
+          </div>
+          
+          <!-- Muscle Filter Chips Row -->
+          <div class="category-chips-row" id="categoryChipsRow">
+            <!-- Filter chips injected dynamically -->
+          </div>
+
+          <!-- Focus Workouts List -->
+          <div class="focus-workouts-list" id="focusWorkoutsList">
+            <!-- Focus workouts injected dynamically -->
+          </div>
+        </div>
+
+      </section>
+
+      <!-- SCREEN 2: DISCOVER & EXERCISE LIBRARY ('More >' or 'Discover' View) -->
+      <section class="screen-view" id="directoryScreen">
+        <div class="directory-header-row">
+          <button class="back-arrow-btn" id="directoryBackBtn">←</button>
+          <h2 class="directory-title" id="directoryScreenTitle">Discover & Library</h2>
+        </div>
+
+        <!-- Mode Switcher: Challenges vs Exercise Library -->
+        <div class="mode-tab-switcher">
+          <button class="mode-tab-btn active" id="tabChallengesBtn" onclick="HomeWorkoutApp.switchDirectoryMode('challenges')">
+            🔥 Challenges
+          </button>
+          <button class="mode-tab-btn" id="tabLibraryBtn" onclick="HomeWorkoutApp.switchDirectoryMode('library')">
+            💪 1,324 Exercises
+          </button>
+        </div>
+
+        <!-- MODE 1: Challenges Container -->
+        <div id="challengesModeContainer">
+          <div class="filter-pills-row" id="directoryFilterPills">
+            <!-- All, Build Muscle, Lose Weight, Full Body -->
+          </div>
+
+          <div class="directory-cards-stack" id="directoryCardsStack">
+            <!-- Challenge Cards Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- MODE 2: Muscle & Environment Exercise Explorer Container -->
+        <div id="libraryModeContainer" style="display: none; padding: 0 18px 24px 18px;">
+          <!-- Explorer Search Bar -->
+          <div class="hw-search-box" style="margin-bottom: 12px;">
+            <svg class="search-icon-svg" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>
+            <input type="text" class="hw-search-input" id="explorerSearchInput" placeholder="Filter by name (e.g. bench press, lunge, warm-up)...">
+          </div>
+
+          <!-- Location Filter Row (Home vs Gym) -->
+          <div class="location-toggle-row" style="margin-bottom: 10px;" id="explorerLocationRow">
+            <button class="loc-toggle-btn active" data-loc="All" onclick="HomeWorkoutApp.filterExplorerLocation('All')">
+              🌐 All (1,324)
+            </button>
+            <button class="loc-toggle-btn" data-loc="Home" onclick="HomeWorkoutApp.filterExplorerLocation('Home')">
+              🏠 Home (401)
+            </button>
+            <button class="loc-toggle-btn" data-loc="Gym" onclick="HomeWorkoutApp.filterExplorerLocation('Gym')">
+              🏋️ Gym (923)
+            </button>
+          </div>
+
+          <!-- Explorer Level Filter Row -->
+          <div class="level-toggle-row" style="margin-bottom: 10px;" id="explorerLevelRow">
+            <button class="level-pill-btn active" data-lvl="All" onclick="HomeWorkoutApp.filterExplorerLevel('All')">
+              All Levels
+            </button>
+            <button class="level-pill-btn" data-lvl="Beginner" onclick="HomeWorkoutApp.filterExplorerLevel('Beginner')">
+              🟢 Beginner
+            </button>
+            <button class="level-pill-btn" data-lvl="Intermediate" onclick="HomeWorkoutApp.filterExplorerLevel('Intermediate')">
+              🟡 Intermediate
+            </button>
+            <button class="level-pill-btn" data-lvl="Advanced" onclick="HomeWorkoutApp.filterExplorerLevel('Advanced')">
+              🔴 Advanced
+            </button>
+          </div>
+
+          <!-- Muscle Filter Pills Row -->
+          <div class="filter-pills-row" style="padding: 0 0 12px 0;" id="explorerMusclePills">
+            <!-- Injected dynamically: All, Chest, Warmup, Abs, Arms, Legs, Shoulders, Back -->
+          </div>
+
+          <!-- Results Header & Counter -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span id="explorerResultsCount" style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
+              Loading Exercises...
+            </span>
+          </div>
+
+          <!-- Explorer Cards Stack -->
+          <div class="focus-workouts-list" id="explorerExercisesStack">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Fixed Bottom Navigation Bar -->
+    <nav class="hw-bottom-nav">
+      <button class="hw-nav-btn active" data-tab="training">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z"/></svg>
+        <span>Training</span>
+      </button>
+
+      <button class="hw-nav-btn" data-tab="discover">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+        <span>Discover</span>
+      </button>
+
+      <button class="hw-nav-btn" data-tab="report">
+        <svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/></svg>
+        <span>Report</span>
+      </button>
+
+      <button class="hw-nav-btn" data-tab="settings">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        <span>Settings</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- MODAL: INTERACTIVE WORKOUT SESSION RUNNER (START DAY 1) -->
+  <div class="workout-runner-modal" id="workoutRunnerModal">
+    <div class="runner-top-bar">
+      <button class="runner-close-btn" onclick="HomeWorkoutApp.closeWorkoutRunner()">✕ Quit</button>
+      <span style="font-size: 0.85rem; font-weight: 800; color: var(--brand-blue);" id="runnerWorkoutBadge">Day 1</span>
+      <span style="font-size: 0.85rem; font-weight: 700; color: #10B981;">● ACTIVE</span>
+    </div>
+
+    <div class="runner-stage-area">
+      <div class="runner-anim-box" id="runnerAnimBox">
+        <img id="runnerGifImg" class="runner-gif-media" src="" alt="Exercise animation" style="display: none;">
+        <span id="runnerEmojiFallback" style="font-size: 3.5rem;">🏃‍♂️</span>
+      </div>
+
+      <div class="runner-timer-num" id="runnerTimerNum">
+        00:30
+      </div>
+
+      <h3 class="runner-ex-title" id="runnerExTitle">Jumping Jacks</h3>
+      <p class="runner-ex-sub" id="runnerExSub">30s • Full Body Warmup</p>
+      
+      <!-- Muscle & Equipment Badges -->
+      <div class="runner-tags-row" id="runnerTagsRow">
+        <span class="runner-badge primary" id="runnerTargetBadge">Target: Full Body</span>
+        <span class="runner-badge" id="runnerEquipBadge">No Equipment</span>
+      </div>
+
+      <!-- Step-by-Step Instructions Box -->
+      <div class="runner-instructions-box" id="runnerInstructionsBox">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+
+    <div class="runner-controls-row">
+      <button class="start-day-pill-btn" style="background: var(--surface-subtle); color: var(--text-main); flex: 1;" onclick="HomeWorkoutApp.prevExercise()">
+        ⏮ PREV
+      </button>
+      <button class="start-day-pill-btn" style="background: var(--surface-subtle); color: var(--text-main); flex: 1;" id="runnerPauseBtn" onclick="HomeWorkoutApp.toggleTimerPause()">
+        ⏸ PAUSE
+      </button>
+      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF; flex: 1.4;" onclick="HomeWorkoutApp.nextExercise()">
+        NEXT ➔
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT WEEKLY GOAL -->
+  <div class="bottom-sheet-backdrop" id="goalModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeGoalModal()">
+    <div class="bottom-sheet-box">
+      <h3 class="sheet-title">Set Weekly Goal</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+        How many days per week do you want to train?
+      </p>
+
+      <div class="goal-options-grid" id="goalOptionsGrid">
+        <!-- 3, 4, 5, 6, 7 -->
+      </div>
+
+      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF;" onclick="HomeWorkoutApp.closeGoalModal()">
+        CONFIRM GOAL
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: PRO SUBSCRIPTION -->
+  <div class="bottom-sheet-backdrop" id="proModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeProModal()" style="align-items: center;">
+    <div class="pro-modal-box">
+      <div class="pro-crown-badge">👑</div>
+      <h3 style="font-size: 1.4rem; font-weight: 900; margin-bottom: 8px;">HOME WORKOUT PRO</h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 20px;">
+        Unlock all 300+ workouts, specialized challenges, and custom training plans with zero ads.
+      </p>
+
+      <div style="background: var(--surface-subtle); border-radius: 14px; padding: 14px; margin-bottom: 20px; text-align: left;">
+        <div style="font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;">✓ All Challenges Unlocked (14, 28, 30 Days)</div>
+        <div style="font-size: 0.85rem; font-weight: 700; margin-bottom: 6px;">✓ Unlimited Custom Routines</div>
+        <div style="font-size: 0.85rem; font-weight: 700;">✓ Ad-Free High Speed Playback</div>
+      </div>
+
+      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF; margin-bottom: 10px;" onclick="HomeWorkoutApp.activatePro()">
+        START 7-DAY FREE TRIAL
+      </button>
+      <button class="runner-close-btn" style="font-size: 0.85rem;" onclick="HomeWorkoutApp.closeProModal()">
+        Maybe Later
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL: SET FITNESS LEVEL -->
+  <div class="bottom-sheet-backdrop" id="levelModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeLevelModal()">
+    <div class="bottom-sheet-box">
+      <h3 class="sheet-title">Select Your Fitness Level</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+        Daily 5–6 exercise routines will adjust to match your strength and experience level.
+      </p>
+
+      <div class="level-options-list" id="levelModalOptionsList">
+        <button class="level-select-card" data-lvl="Beginner" onclick="HomeWorkoutApp.setUserLevel('Beginner')">
+          <div style="flex: 1; text-align: left;">
+            <div style="font-weight: 800; font-size: 0.95rem;">🟢 Beginner</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Fundamental movements, knee/wall pushups, bodyweight bridges</div>
+          </div>
+          <span class="level-check-icon">✓</span>
+        </button>
+
+        <button class="level-select-card active" data-lvl="Intermediate" onclick="HomeWorkoutApp.setUserLevel('Intermediate')">
+          <div style="flex: 1; text-align: left;">
+            <div style="font-weight: 800; font-size: 0.95rem;">🟡 Intermediate (Recommended)</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Standard pushups, dumbbell compound lifts, lunges, full planks</div>
+          </div>
+          <span class="level-check-icon">✓</span>
+        </button>
+
+        <button class="level-select-card" data-lvl="Advanced" onclick="HomeWorkoutApp.setUserLevel('Advanced')">
+          <div style="flex: 1; text-align: left;">
+            <div style="font-weight: 800; font-size: 0.95rem;">🔴 Advanced</div>
+            <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Explosive jump squats, archer/drop pushups, heavy dumbbell sets</div>
+          </div>
+          <span class="level-check-icon">✓</span>
+        </button>
+      </div>
+
+      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF; margin-top: 14px;" onclick="HomeWorkoutApp.closeLevelModal()">
+        CONFIRM LEVEL
+      </button>
+    </div>
+  </div>
+
+  <!-- Application Logic Scripts -->
+  <script src="js/exercises.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/visuals.js"></script>
+  <script src="js/homeworkout.js"></script>
+</body>
+</html>
