@@ -15,6 +15,10 @@ const HomeWorkoutApp = {
   explorerLevel: 'All', // 'All' | 'Beginner' | 'Intermediate' | 'Advanced'
   explorerSearch: '',
 
+  // Swap Modal State
+  swapTargetIndex: null,
+  swapModalSearch: '',
+
   // Active Workout Player State
   activeWorkout: null,
   activeExerciseIndex: 0,
@@ -56,6 +60,15 @@ const HomeWorkoutApp = {
       explorerSearch.addEventListener('input', (e) => {
         this.explorerSearch = e.target.value;
         this.renderExplorer();
+      });
+    }
+
+    // Swap modal search input
+    const swapSearch = document.getElementById('swapModalSearchInput');
+    if (swapSearch) {
+      swapSearch.addEventListener('input', (e) => {
+        this.swapModalSearch = e.target.value;
+        this.renderSwapOptions();
       });
     }
 
@@ -222,7 +235,8 @@ const HomeWorkoutApp = {
     }).join('');
   },
 
-  renderBodyFocus() {
+  renderBodyFocus(options = {}) {
+    const { forceRefresh = false, shuffle = false } = options;
     const segRow = document.getElementById('bodyFocusLocationSegment');
     const lvlBtnText = document.getElementById('bfLevelText');
     const chipsRow = document.getElementById('categoryChipsRow');
@@ -252,16 +266,25 @@ const HomeWorkoutApp = {
       `).join('');
     }
 
-    // Query recommended 5-exercise daily routine with smart non-repeating rotation
-    const routineData = HomeWorkoutStore.getRecommendedDailyRoutine({
-      muscle: this.activeBodyFocus,
-      location: this.activeFocusLocation,
-      level: this.activeFocusLevel,
-      forceShuffle: false,
-      count: 5
-    });
-    this.currentDailyRoutine = routineData;
+    // Preserve existing routine unless filters changed, forceRefresh was requested, or shuffle was clicked
+    const routineMatchesFilter = this.currentDailyRoutine &&
+      this.currentDailyRoutine.muscle === this.activeBodyFocus &&
+      this.currentDailyRoutine.location === this.activeFocusLocation &&
+      this.currentDailyRoutine.level === this.activeFocusLevel &&
+      Array.isArray(this.currentDailyRoutine.exercises) &&
+      this.currentDailyRoutine.exercises.length > 0;
 
+    if (!routineMatchesFilter || forceRefresh || shuffle) {
+      this.currentDailyRoutine = HomeWorkoutStore.getRecommendedDailyRoutine({
+        muscle: this.activeBodyFocus,
+        location: this.activeFocusLocation,
+        level: this.activeFocusLevel,
+        forceShuffle: shuffle,
+        count: 5
+      });
+    }
+
+    const routineData = this.currentDailyRoutine || {};
     const exercises = routineData.exercises || [];
     
     if (!exercises || exercises.length === 0) {
@@ -297,7 +320,7 @@ const HomeWorkoutApp = {
       </div>
     `;
 
-    // Clean, roomy, non-overlapping exercise items
+    // Clean, roomy, non-overlapping exercise items with single Swap button
     const cardsHtml = exercises.map((ex, idx) => `
       <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
         <div class="fw-left-wrap">
@@ -311,9 +334,14 @@ const HomeWorkoutApp = {
             </div>
           </div>
         </div>
-        <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
-          START ➔
-        </button>
+        <div class="fw-card-actions">
+          <button class="fw-swap-btn" onclick="event.stopPropagation(); HomeWorkoutApp.openSwapModal(${idx})" title="Swap this exercise with another one">
+            🔄 Swap
+          </button>
+          <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
+            START ➔
+          </button>
+        </div>
       </div>
     `).join('');
 
@@ -322,29 +350,182 @@ const HomeWorkoutApp = {
 
   switchFocusLocation(loc) {
     this.activeFocusLocation = loc;
-    this.renderBodyFocus();
+    this.renderBodyFocus({ forceRefresh: true });
   },
 
   switchFocusLevel(lvl) {
     this.activeFocusLevel = lvl;
-    this.renderBodyFocus();
+    this.renderBodyFocus({ forceRefresh: true });
   },
 
   switchBodyFocus(catId) {
     this.activeBodyFocus = catId;
-    this.renderBodyFocus();
+    this.renderBodyFocus({ forceRefresh: true });
   },
 
   shuffleRoutine() {
-    const routineData = HomeWorkoutStore.getRecommendedDailyRoutine({
+    this.renderBodyFocus({ shuffle: true });
+  },
+
+  // ========================================================
+  // SINGLE EXERCISE SWAP & REPLACEMENT SYSTEM
+  // ========================================================
+  openSwapModal(index) {
+    if (!this.currentDailyRoutine || !this.currentDailyRoutine.exercises || !this.currentDailyRoutine.exercises[index]) {
+      return;
+    }
+    this.swapTargetIndex = index;
+    this.swapModalSearch = '';
+
+    const currentEx = this.currentDailyRoutine.exercises[index];
+    const modal = document.getElementById('swapExerciseModalBackdrop');
+    const titleEl = document.getElementById('swapModalTitle');
+    const thumbEl = document.getElementById('swapCurrentThumb');
+    const nameEl = document.getElementById('swapCurrentName');
+    const searchInput = document.getElementById('swapModalSearchInput');
+
+    if (titleEl) titleEl.textContent = `Replace Exercise #${index + 1}`;
+    if (nameEl) nameEl.textContent = currentEx.name;
+    if (thumbEl) {
+      thumbEl.src = currentEx.thumbnailUrl || '';
+      thumbEl.alt = currentEx.name;
+      thumbEl.onerror = () => {
+        thumbEl.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44"><rect width="44" height="44" rx="10" fill="%23F3F4F6"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-size="18">💪</text></svg>';
+      };
+    }
+    if (searchInput) searchInput.value = '';
+
+    if (modal) modal.classList.add('active');
+    this.renderSwapOptions();
+  },
+
+  closeSwapModal() {
+    this.swapTargetIndex = null;
+    const modal = document.getElementById('swapExerciseModalBackdrop');
+    if (modal) modal.classList.remove('active');
+  },
+
+  getAvailableSwapCandidates() {
+    if (typeof ExerciseDataset === 'undefined' || !ExerciseDataset.queryExercises) {
+      return [];
+    }
+
+    const currentRoutineIds = (this.currentDailyRoutine && this.currentDailyRoutine.exercises)
+      ? this.currentDailyRoutine.exercises.map(e => String(e.id))
+      : [];
+
+    // Query exercises matching current muscle and location
+    let candidates = ExerciseDataset.queryExercises({
       muscle: this.activeBodyFocus,
       location: this.activeFocusLocation,
-      level: this.activeFocusLevel,
-      forceShuffle: true,
-      count: 5
+      level: this.activeFocusLevel !== 'All' ? this.activeFocusLevel : 'All',
+      search: this.swapModalSearch,
+      limit: 150
     });
-    this.currentDailyRoutine = routineData;
+
+    // If query has few results and level was specified, broaden level
+    if (candidates.length < 8 && this.activeFocusLevel !== 'All' && !this.swapModalSearch) {
+      candidates = ExerciseDataset.queryExercises({
+        muscle: this.activeBodyFocus,
+        location: this.activeFocusLocation,
+        search: this.swapModalSearch,
+        limit: 150
+      });
+    }
+
+    // Exclude exercises already present in current routine
+    return candidates.filter(ex => !currentRoutineIds.includes(String(ex.id)));
+  },
+
+  renderSwapOptions() {
+    const listContainer = document.getElementById('swapOptionsList');
+    if (!listContainer) return;
+
+    const candidates = this.getAvailableSwapCandidates();
+
+    if (candidates.length === 0) {
+      listContainer.innerHTML = `
+        <div style="text-align: center; padding: 24px 10px; color: var(--text-muted); font-size: 0.82rem;">
+          <p style="font-weight: 700; margin-bottom: 4px;">No alternative exercises found</p>
+          <p style="font-size: 0.74rem;">Try searching for a different keyword or broaden filters.</p>
+        </div>
+      `;
+      return;
+    }
+
+    listContainer.innerHTML = candidates.map(cand => `
+      <div class="swap-option-card" onclick="HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
+        <div class="swap-option-left">
+          <img class="swap-option-thumb" src="${cand.thumbnailUrl}" alt="${cand.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'44\\' height=\\'44\\' viewBox=\\'0 0 44 44\\'><rect width=\\'44\\' height=\\'44\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'18\\'>💪</text></svg>'">
+          <div class="swap-option-info">
+            <div class="swap-option-title">${cand.name}</div>
+            <div class="swap-option-meta">
+              <span>🎯 ${cand.target || cand.muscle}</span>
+              ${cand.equipment ? ` • <span>${cand.equipment}</span>` : ''}
+              ${cand.level ? ` • <span>${cand.level}</span>` : ''}
+            </div>
+          </div>
+        </div>
+        <button class="swap-select-btn" onclick="event.stopPropagation(); HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
+          Choose ➔
+        </button>
+      </div>
+    `).join('');
+  },
+
+  findExerciseObject(id) {
+    if (typeof ExerciseDataset !== 'undefined') {
+      if (ExerciseDataset.allExercises && ExerciseDataset.allExercises.length > 0) {
+        const found = ExerciseDataset.allExercises.find(x => String(x.id) === String(id));
+        if (found) return found;
+      }
+      if (ExerciseDataset.bodyFocus) {
+        for (const list of Object.values(ExerciseDataset.bodyFocus)) {
+          const found = list.find(x => String(x.id) === String(id));
+          if (found) return found;
+        }
+      }
+      if (ExerciseDataset.challenges) {
+        for (const list of Object.values(ExerciseDataset.challenges)) {
+          const found = list.find(x => String(x.id) === String(id));
+          if (found) return found;
+        }
+      }
+    }
+    return null;
+  },
+
+  selectReplacementExercise(exerciseId) {
+    if (this.swapTargetIndex === null || !this.currentDailyRoutine || !this.currentDailyRoutine.exercises) {
+      return;
+    }
+
+    const replacement = this.findExerciseObject(exerciseId);
+    if (!replacement) {
+      alert('Could not load exercise details.');
+      return;
+    }
+
+    // Replace in current daily routine
+    this.currentDailyRoutine.exercises[this.swapTargetIndex] = replacement;
+    this.closeSwapModal();
     this.renderBodyFocus();
+  },
+
+  quickRandomSwapCurrent() {
+    if (this.swapTargetIndex === null || !this.currentDailyRoutine || !this.currentDailyRoutine.exercises) {
+      return;
+    }
+
+    const candidates = this.getAvailableSwapCandidates();
+    if (candidates.length === 0) {
+      alert('No alternate exercises available to swap.');
+      return;
+    }
+
+    const randomIndex = Math.floor(Math.random() * candidates.length);
+    const chosen = candidates[randomIndex];
+    this.selectReplacementExercise(chosen.id);
   },
 
   startFullDailyRoutine() {
@@ -919,7 +1100,7 @@ const HomeWorkoutApp = {
     // Refresh all UI states
     this.renderHeader();
     this.renderWeeklyGoalCard();
-    this.renderBodyFocus();
+    this.renderBodyFocus({ forceRefresh: true });
 
     if (isDaily) {
       const mName = this.activeWorkout.muscle.toUpperCase();
@@ -964,7 +1145,7 @@ const HomeWorkoutApp = {
     HomeWorkoutStore.setUserLevel(lvl);
     this.activeFocusLevel = lvl;
     this.renderHeader();
-    this.renderBodyFocus();
+    this.renderBodyFocus({ forceRefresh: true });
     this.closeLevelModal();
   },
 

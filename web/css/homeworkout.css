@@ -945,6 +945,139 @@ body {
   color: #FFFFFF;
 }
 
+.fw-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fw-swap-btn {
+  background: #F3F4F6;
+  color: #4B5563;
+  border: 1px solid #E5E7EB;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.fw-swap-btn:hover {
+  background: #E5E7EB;
+  color: var(--text-main);
+  border-color: #9CA3AF;
+}
+
+/* Swap Modal Components */
+.swap-current-banner {
+  background: #F3F4F6;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-subtle);
+}
+
+.swap-random-btn {
+  background: var(--brand-blue-light);
+  color: var(--brand-blue);
+  border: 1px solid rgba(0, 82, 255, 0.2);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 7px 12px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.swap-random-btn:hover {
+  background: var(--brand-blue);
+  color: #FFFFFF;
+}
+
+.swap-option-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.swap-option-card:hover {
+  border-color: var(--brand-blue);
+  background: #F8FAFC;
+}
+
+.swap-option-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.swap-option-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+  flex-shrink: 0;
+}
+
+.swap-option-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.swap-option-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.swap-option-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.swap-select-btn {
+  background: var(--brand-blue);
+  color: #FFFFFF;
+  border: none;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ======================================================== */
 /* FIXED BOTTOM NAVIGATION BAR                              */
 /* ======================================================== */

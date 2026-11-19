@@ -364,6 +364,47 @@
     </div>
   </div>
 
+  <!-- MODAL: SWAP / CHOOSE ANOTHER EXERCISE -->
+  <div class="bottom-sheet-backdrop" id="swapExerciseModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeSwapModal()">
+    <div class="bottom-sheet-box" style="max-height: 84vh; display: flex; flex-direction: column;">
+      
+      <!-- Modal Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 class="sheet-title" style="margin: 0;" id="swapModalTitle">Choose Replacement</h3>
+        <button class="runner-close-btn" onclick="HomeWorkoutApp.closeSwapModal()" style="font-size: 1.1rem; padding: 4px 8px; border: none; background: transparent; cursor: pointer;">✕</button>
+      </div>
+      
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 12px;">
+        Don't like this exercise? Pick any alternative from your muscle pool or do a quick random swap.
+      </p>
+
+      <!-- Current Exercise Banner with Quick Random Swap Button -->
+      <div class="swap-current-banner">
+        <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+          <img id="swapCurrentThumb" src="" alt="" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: #EEE; flex-shrink: 0;">
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700;">Currently Selected:</div>
+            <div id="swapCurrentName" style="font-weight: 800; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main);"></div>
+          </div>
+        </div>
+        <button class="swap-random-btn" onclick="HomeWorkoutApp.quickRandomSwapCurrent()">
+          🎲 Quick Swap
+        </button>
+      </div>
+
+      <!-- Search Input inside Modal -->
+      <div class="hw-search-box" style="margin-bottom: 12px; padding: 8px 14px;">
+        <svg class="search-icon-svg" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <input type="text" class="hw-search-input" id="swapModalSearchInput" placeholder="Search replacement...">
+      </div>
+
+      <!-- Scrollable Replacement Pool List -->
+      <div class="swap-options-list" id="swapOptionsList" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; max-height: 330px; padding-bottom: 10px;">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+  </div>
+
   <!-- Application Logic Scripts -->
   <script src="js/exercises.js"></script>
   <script src="js/store.js"></script>

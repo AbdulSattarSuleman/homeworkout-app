@@ -481,17 +481,25 @@ const HomeWorkoutStore = {
     let selected = [];
     let isRotated = false;
 
+    function trueShuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
     if (fresh.length >= count) {
       // We have enough fresh exercises!
       isRotated = lastCompletedIds.length > 0;
       selected = forceShuffle 
-        ? [...fresh].sort(() => 0.5 - Math.random()).slice(0, count)
+        ? trueShuffle(fresh).slice(0, count)
         : fresh.slice(0, count);
     } else {
       // Blend fresh with oldest previous movements
-      selected = [...fresh, ...previous];
-      if (forceShuffle) selected.sort(() => 0.5 - Math.random());
-      selected = selected.slice(0, count);
+      const blended = [...fresh, ...previous];
+      selected = forceShuffle ? trueShuffle(blended).slice(0, count) : blended.slice(0, count);
       isRotated = fresh.length > 0 && lastCompletedIds.length > 0;
     }
 
