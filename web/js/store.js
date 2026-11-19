@@ -25,22 +25,41 @@ const HomeWorkoutStore = {
     } catch (e) {}
   },
 
+  getApiBase() {
+    if (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
+      return window.APP_CONFIG.API_BASE_URL.replace(/\/+$/, '');
+    }
+    try {
+      const custom = localStorage.getItem('hw_api_base_url');
+      if (custom) return custom.replace(/\/+$/, '');
+    } catch (e) {}
+
+    // When deployed on GitHub Pages or custom domain, route to active public tunnel / backend
+    if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
+      return 'https://cost-elizabeth-minneapolis-long.trycloudflare.com';
+    }
+    return '';
+  },
+
   async apiRequest(endpoint, method = 'GET', body = null) {
     const token = this.getToken();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
+    const base = this.getApiBase();
+    const url = (endpoint.startsWith('http') || !base) ? endpoint : `${base}${endpoint}`;
+
     try {
       const opts = { method, headers };
       if (body) opts.body = JSON.stringify(body);
-      const res = await fetch(endpoint, opts);
+      const res = await fetch(url, opts);
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.detail || `HTTP ${res.status}`);
       }
       return await res.json();
     } catch (e) {
-      console.warn(`[Store API] ${method} ${endpoint} failed:`, e.message);
+      console.warn(`[Store API] ${method} ${url} failed:`, e.message);
       return null;
     }
   },

@@ -10,3 +10,11 @@ Desktop.ini
 .DS_Store
 .idea/
 .vscode/
+
+# Database & runtime files
+homeworkout.db
+*.db
+*.sqlite3
+__pycache__/
+*.pyc
+*.log

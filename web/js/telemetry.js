@@ -74,6 +74,23 @@ const TelemetryTracker = {
     };
   },
 
+  getApiBase() {
+    if (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.getApiBase) {
+      return HomeWorkoutStore.getApiBase();
+    }
+    if (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
+      return window.APP_CONFIG.API_BASE_URL.replace(/\/+$/, '');
+    }
+    try {
+      const custom = localStorage.getItem('hw_api_base_url');
+      if (custom) return custom.replace(/\/+$/, '');
+    } catch (e) {}
+    if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
+      return 'https://cost-elizabeth-minneapolis-long.trycloudflare.com';
+    }
+    return '';
+  },
+
   async logEvent(eventType, eventCategory = 'interaction', eventDetails = {}) {
     try {
       const device = this.getDeviceInfo();
@@ -96,7 +113,10 @@ const TelemetryTracker = {
         device_type: device.deviceType
       };
 
-      fetch('/api/telemetry/event', {
+      const base = this.getApiBase();
+      const url = base ? `${base}/api/telemetry/event` : '/api/telemetry/event';
+
+      fetch(url, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(payload)
@@ -149,11 +169,14 @@ const TelemetryTracker = {
         device_type: device.deviceType
       };
 
+      const base = this.getApiBase();
+      const url = base ? `${base}/api/telemetry/heartbeat` : '/api/telemetry/heartbeat';
+
       if (navigator.sendBeacon) {
         const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-        navigator.sendBeacon('/api/telemetry/heartbeat', blob);
+        navigator.sendBeacon(url, blob);
       } else {
-        fetch('/api/telemetry/heartbeat', {
+        fetch(url, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(payload),

@@ -561,6 +561,10 @@
     </div>
 
     <div class="nav-actions">
+      <button class="btn btn-secondary" onclick="AdminApp.promptChangeServerUrl()" title="Configure Backend API Server URL">
+        🌐 <span id="serverUrlLabel">API: Auto</span>
+      </button>
+
       <select class="select-dropdown" id="refreshIntervalSelect" onchange="AdminApp.setRefreshInterval(this.value)">
         <option value="10000">⚡ Auto: 10s</option>
         <option value="30000">⚡ Auto: 30s</option>
@@ -766,7 +770,60 @@
       cachedActivities: [],
       cachedUsers: [],
 
+      getApiBase() {
+        if (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
+          return window.APP_CONFIG.API_BASE_URL.replace(/\/+$/, '');
+        }
+        try {
+          const custom = localStorage.getItem('hw_api_base_url');
+          if (custom) return custom.replace(/\/+$/, '');
+        } catch (e) {}
+        if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
+          return 'https://cost-elizabeth-minneapolis-long.trycloudflare.com';
+        }
+        return '';
+      },
+
+      apiUrl(endpoint) {
+        const base = this.getApiBase();
+        return (endpoint.startsWith('http') || !base) ? endpoint : `${base}${endpoint}`;
+      },
+
+      promptChangeServerUrl() {
+        const current = this.getApiBase() || '(Auto / Local)';
+        const newUrl = prompt('Configure Backend API Server URL for Admin & Client:\n(e.g., https://cost-elizabeth-minneapolis-long.trycloudflare.com or https://your-server.onrender.com)\nLeave empty to use Auto / Local:', this.getApiBase());
+        if (newUrl !== null) {
+          if (newUrl.trim() === '') {
+            localStorage.removeItem('hw_api_base_url');
+            alert('Reset to Auto Backend URL.');
+          } else {
+            localStorage.setItem('hw_api_base_url', newUrl.trim().replace(/\/+$/, ''));
+            alert(`Backend URL updated to: ${newUrl.trim()}`);
+          }
+          this.updateServerBadge();
+          this.refreshAll();
+        }
+      },
+
+      updateServerBadge() {
+        const badge = document.getElementById('serverUrlLabel');
+        if (badge) {
+          const base = this.getApiBase();
+          if (base) {
+            try {
+              const u = new URL(base);
+              badge.textContent = `API: ${u.hostname.substring(0, 16)}..`;
+            } catch (e) {
+              badge.textContent = 'API: Remote';
+            }
+          } else {
+            badge.textContent = 'API: Local';
+          }
+        }
+      },
+
       init() {
+        this.updateServerBadge();
         this.token = localStorage.getItem('hw_admin_token');
         if (this.token) {
           this.verifyToken();
@@ -782,7 +839,7 @@
 
       async verifyToken() {
         try {
-          const res = await fetch('/api/admin/verify', {
+          const res = await fetch(this.apiUrl('/api/admin/verify'), {
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
           if (res.ok) {
@@ -812,7 +869,7 @@
         }
 
         try {
-          const res = await fetch('/api/admin/login', {
+          const res = await fetch(this.apiUrl('/api/admin/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
@@ -877,7 +934,7 @@
 
       async fetchStats() {
         try {
-          const res = await fetch('/api/admin/stats', {
+          const res = await fetch(this.apiUrl('/api/admin/stats'), {
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
           if (!res.ok) return;
@@ -946,7 +1003,7 @@
 
       async fetchActivities() {
         try {
-          const res = await fetch(`/api/admin/activities?limit=150&category=${this.activeCategory}`, {
+          const res = await fetch(this.apiUrl(`/api/admin/activities?limit=150&category=${this.activeCategory}`), {
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
           if (!res.ok) return;
@@ -1039,7 +1096,7 @@
 
       async fetchUsers() {
         try {
-          const res = await fetch('/api/admin/users', {
+          const res = await fetch(this.apiUrl('/api/admin/users'), {
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
           if (!res.ok) return;
@@ -1104,7 +1161,7 @@
 
       async inspectUser(userId) {
         try {
-          const res = await fetch(`/api/admin/user/${userId}/detail`, {
+          const res = await fetch(this.apiUrl(`/api/admin/user/${userId}/detail`), {
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
           if (!res.ok) return;
@@ -1189,7 +1246,7 @@
           return;
         }
         try {
-          const res = await fetch('/api/admin/activities', {
+          const res = await fetch(this.apiUrl('/api/admin/activities'), {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
