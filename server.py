@@ -264,6 +264,9 @@ class WorkoutCompleteRequest(BaseModel):
     calories_burned: Optional[int] = 145
     exercises: Optional[List[dict]] = []
 
+class DeleteSelectedLogsRequest(BaseModel):
+    log_ids: List[str]
+
 class TelemetryEventRequest(BaseModel):
     session_id: str
     event_type: str
@@ -588,9 +591,51 @@ def clear_workout_history(user: dict = Depends(get_current_user)):
     cur = conn.cursor()
     cur.execute("DELETE FROM workout_logs WHERE user_id = ?", (user["id"],))
     cur.execute("DELETE FROM muscle_rotation_history WHERE user_id = ?", (user["id"],))
+    cur.execute("UPDATE users SET weekly_completed_count = 0 WHERE id = ?", (user["id"],))
     conn.commit()
     conn.close()
-    return {"status": "success", "message": "History cleared"}
+    return {"status": "success", "message": "All workout history cleared", "remaining_count": 0}
+
+@app.post("/api/workouts/history/delete-selected")
+def delete_selected_workout_history(req: DeleteSelectedLogsRequest, user: dict = Depends(get_current_user)):
+    """Deletes only user-selected workout session logs (custom or bulk)"""
+    if not req.log_ids:
+        return {"status": "success", "deleted_count": 0, "remaining_count": 0}
+    
+    conn = get_db()
+    cur = conn.cursor()
+    placeholders = ",".join(["?"] * len(req.log_ids))
+    params = list(req.log_ids) + [user["id"]]
+    cur.execute(f"DELETE FROM workout_logs WHERE id IN ({placeholders}) AND user_id = ?", tuple(params))
+    deleted_count = cur.rowcount
+
+    # Recalculate remaining workouts count for user
+    cur.execute("SELECT COUNT(*) as c FROM workout_logs WHERE user_id = ?", (user["id"],))
+    remaining_count = cur.fetchone()["c"]
+    cur.execute("UPDATE users SET weekly_completed_count = ? WHERE id = ?", (remaining_count, user["id"]))
+    conn.commit()
+    conn.close()
+
+    return {"status": "success", "deleted_count": deleted_count, "remaining_count": remaining_count}
+
+@app.post("/api/user/reset-progress")
+def reset_user_progress(user: dict = Depends(get_current_user)):
+    """Resets user streak to 0, weekly completed workouts to 0, and purges past workout logs"""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE users 
+        SET streak_count = 0, weekly_completed_count = 0, last_workout_date = NULL 
+        WHERE id = ?
+    """, (user["id"],))
+    cur.execute("DELETE FROM workout_logs WHERE user_id = ?", (user["id"],))
+    cur.execute("DELETE FROM muscle_rotation_history WHERE user_id = ?", (user["id"],))
+    conn.commit()
+    cur.execute("SELECT * FROM users WHERE id = ?", (user["id"],))
+    updated_user = dict(cur.fetchone())
+    conn.close()
+    updated_user.pop("password_hash", None)
+    return {"status": "success", "message": "All user progress has been reset", "user": updated_user}
 
 # ========================================================
 # TELEMETRY & ACTIVITY TRACKING ENDPOINTS

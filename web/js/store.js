@@ -600,15 +600,57 @@ const HomeWorkoutStore = {
     }
   },
 
-  clearWorkoutLogs() {
+  async clearWorkoutLogs() {
     localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
+    if (this.getToken()) {
+      await this.apiRequest('/api/workouts/history', 'DELETE');
+    }
+    const user = this.getUser();
+    user.weeklyCompletedCount = 0;
+    this.saveUser(user);
     return [];
   },
 
-  resetAllProgress() {
+  async deleteSelectedWorkoutLogs(logIds = []) {
+    if (!logIds || logIds.length === 0) return this.getWorkoutLogs();
+    
+    // Update local storage
+    const current = this.getWorkoutLogs();
+    const filtered = current.filter(l => !logIds.includes(String(l.id)));
+    this.saveWorkoutLogs(filtered);
+
+    // Sync to cloud if authenticated
+    if (this.getToken()) {
+      const res = await this.apiRequest('/api/workouts/history/delete-selected', 'POST', {
+        log_ids: logIds.map(String)
+      });
+      if (res && typeof res.remaining_count === 'number') {
+        const user = this.getUser();
+        user.weeklyCompletedCount = res.remaining_count;
+        this.saveUser(user);
+      }
+    } else {
+      const user = this.getUser();
+      user.weeklyCompletedCount = Math.max(0, user.weeklyCompletedCount - logIds.length);
+      this.saveUser(user);
+    }
+
+    return filtered;
+  },
+
+  async resetAllProgress() {
     localStorage.removeItem(this.KEYS.USER_PROGRESS);
     localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
-    return this.initialState.user;
+
+    if (this.getToken()) {
+      await this.apiRequest('/api/user/reset-progress', 'POST');
+    }
+
+    const freshUser = JSON.parse(JSON.stringify(this.initialState.user));
+    freshUser.streakCount = 0;
+    freshUser.weeklyCompletedCount = 0;
+    this.saveUser(freshUser);
+    return freshUser;
   },
 
   // Link and synchronize authentic dataset exercises

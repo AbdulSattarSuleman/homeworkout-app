@@ -26,6 +26,11 @@ const HomeWorkoutApp = {
   timerInterval: null,
   isPaused: false,
 
+  // History Multi-Select & Selective Delete State
+  historySelectionMode: false,
+  selectedLogIds: new Set(),
+  cachedTimelineLogs: [],
+
   async init() {
     this.activeFocusLevel = HomeWorkoutStore.getUserLevel();
     this.renderHeader();
@@ -1339,14 +1344,18 @@ const HomeWorkoutApp = {
     const container = document.getElementById('reportScreenContent');
     if (!container) return;
 
-    container.innerHTML = `
-      <div style="text-align: center; padding: 28px; color: var(--text-muted); font-size: 0.85rem;">
-        ⌛ Syncing timeline history...
-      </div>
-    `;
-
     const timeline = await HomeWorkoutStore.getTimelineHistory();
     const allLogs = timeline.all_logs || [];
+    this.cachedTimelineLogs = allLogs;
+
+    // Prune selectedLogIds that no longer exist
+    const validIds = new Set(allLogs.map(l => String(l.id)));
+    for (const sid of Array.from(this.selectedLogIds)) {
+      if (!validIds.has(sid)) this.selectedLogIds.delete(sid);
+    }
+
+    const self = this;
+    const isSelectionMode = this.historySelectionMode;
 
     function renderLogCards(logsList) {
       if (!logsList || logsList.length === 0) return '';
@@ -1354,37 +1363,50 @@ const HomeWorkoutApp = {
         const timeStr = l.completedAt ? new Date(l.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         const dateStr = l.completedAt ? new Date(l.completedAt).toLocaleDateString() : '';
         const exCount = l.exercises ? l.exercises.length : 0;
+        const isSelected = self.selectedLogIds.has(String(l.id));
+
         return `
-          <div class="timeline-card">
-            <div class="timeline-card-header">
-              <div>
-                <h4 style="font-weight: 800; font-size: 0.95rem; margin: 0; color: var(--text-main);">${l.challengeTitle || l.workout_title}</h4>
-                <div class="timeline-card-meta">
-                  ${dateStr} ${timeStr ? '• ' + timeStr : ''} • ${l.durationMinutes || 18} Min • ${l.caloriesBurned || 140} kcal
+          <div class="timeline-card ${isSelected ? 'selected' : ''}" style="${isSelectionMode ? 'cursor: pointer;' : ''}" onclick="${isSelectionMode ? `HomeWorkoutApp.toggleLogSelect('${l.id}')` : ''}">
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+              ${isSelectionMode ? `
+                <div style="padding-top: 2px;">
+                  <input type="checkbox" class="log-select-checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); HomeWorkoutApp.toggleLogSelect('${l.id}')" style="width: 19px; height: 19px; accent-color: var(--brand-blue); cursor: pointer;">
                 </div>
-              </div>
-              <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
-            </div>
-            ${exCount > 0 ? `
-              <button class="timeline-accordion-btn" onclick="HomeWorkoutApp.toggleTimelineAccordion('${l.id}')">
-                <span>▶ View ${exCount} Exercises</span>
-              </button>
-              <div class="timeline-exercises-list" id="tl-ex-${l.id}">
-                ${l.exercises.map(ex => `
-                  <div class="timeline-ex-item">
-                    <span class="timeline-ex-item-dot"></span>
-                    <span>${ex.name}</span>
-                    ${ex.target ? `<span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">(🎯 ${ex.target})</span>` : ''}
+              ` : ''}
+              <div style="flex: 1; min-width: 0;">
+                <div class="timeline-card-header">
+                  <div>
+                    <h4 style="font-weight: 800; font-size: 0.95rem; margin: 0; color: var(--text-main);">${l.challengeTitle || l.workout_title}</h4>
+                    <div class="timeline-card-meta">
+                      ${dateStr} ${timeStr ? '• ' + timeStr : ''} • ${l.durationMinutes || 18} Min • ${l.caloriesBurned || 140} kcal
+                    </div>
                   </div>
-                `).join('')}
+                  <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
+                </div>
+                ${exCount > 0 ? `
+                  <button class="timeline-accordion-btn" onclick="event.stopPropagation(); HomeWorkoutApp.toggleTimelineAccordion('${l.id}')">
+                    <span>▶ View ${exCount} Exercises</span>
+                  </button>
+                  <div class="timeline-exercises-list" id="tl-ex-${l.id}">
+                    ${l.exercises.map(ex => `
+                      <div class="timeline-ex-item">
+                        <span class="timeline-ex-item-dot"></span>
+                        <span>${ex.name}</span>
+                        ${ex.target ? `<span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">(🎯 ${ex.target})</span>` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
               </div>
-            ` : ''}
+            </div>
           </div>
         `;
       }).join('');
     }
 
     const hasAny = allLogs.length > 0;
+    const allSelected = hasAny && (this.selectedLogIds.size === allLogs.length);
+    const selectedCount = this.selectedLogIds.size;
 
     let historySectionsHtml = '';
     if (hasAny) {
@@ -1461,14 +1483,73 @@ const HomeWorkoutApp = {
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
         <h3 class="section-bold-title" style="font-size: 1.05rem; margin: 0;">Workout Timeline</h3>
         ${hasAny ? `
-          <button onclick="HomeWorkoutApp.clearReportHistory()" style="background: #FEE2E2; color: #DC2626; border: none; font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; cursor: pointer;">
-            🗑️ Clear History
+          <button onclick="HomeWorkoutApp.toggleHistorySelectMode()" style="background: ${isSelectionMode ? 'var(--brand-blue)' : '#EFF6FF'}; color: ${isSelectionMode ? '#FFF' : 'var(--brand-blue)'}; border: 1px solid rgba(0, 82, 255, 0.25); font-size: 0.72rem; font-weight: 800; padding: 5px 12px; border-radius: 9999px; cursor: pointer;">
+            ${isSelectionMode ? '✕ Cancel' : '☑ Manage / Select'}
           </button>
         ` : ''}
       </div>
 
+      ${isSelectionMode && hasAny ? `
+        <div class="timeline-manage-toolbar">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="masterSelectAllCheck" ${allSelected ? 'checked' : ''} onchange="HomeWorkoutApp.toggleSelectAllHistory(this.checked)" style="width: 18px; height: 18px; accent-color: var(--brand-blue); cursor: pointer;">
+            <label for="masterSelectAllCheck" style="font-size: 0.82rem; font-weight: 800; color: var(--text-main); cursor: pointer;">
+              Select All (${selectedCount}/${allLogs.length} selected)
+            </label>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="bulk-delete-btn" onclick="HomeWorkoutApp.deleteSelectedHistory()" ${selectedCount === 0 ? 'disabled' : ''}>
+              🗑️ Delete Selected (${selectedCount})
+            </button>
+          </div>
+        </div>
+      ` : ''}
+
       ${historySectionsHtml}
     `;
+  },
+
+  toggleHistorySelectMode() {
+    this.historySelectionMode = !this.historySelectionMode;
+    if (!this.historySelectionMode) {
+      this.selectedLogIds.clear();
+    }
+    this.renderReportScreen();
+  },
+
+  toggleSelectAllHistory(checked) {
+    if (checked) {
+      this.cachedTimelineLogs.forEach(l => this.selectedLogIds.add(String(l.id)));
+    } else {
+      this.selectedLogIds.clear();
+    }
+    this.renderReportScreen();
+  },
+
+  toggleLogSelect(logId) {
+    const sid = String(logId);
+    if (this.selectedLogIds.has(sid)) {
+      this.selectedLogIds.delete(sid);
+    } else {
+      this.selectedLogIds.add(sid);
+    }
+    this.renderReportScreen();
+  },
+
+  async deleteSelectedHistory() {
+    const count = this.selectedLogIds.size;
+    if (count === 0) return;
+
+    if (confirm(`Are you sure you want to delete ${count} selected workout session(s)?`)) {
+      const ids = Array.from(this.selectedLogIds);
+      await HomeWorkoutStore.deleteSelectedWorkoutLogs(ids);
+      this.selectedLogIds.clear();
+      this.historySelectionMode = false;
+      await this.renderReportScreen();
+      this.renderWeeklyGoalCard();
+      this.renderHeader();
+      alert(`🗑️ ${count} workout session(s) successfully deleted.`);
+    }
   },
 
   toggleTimelineAccordion(logId) {
@@ -1504,13 +1585,9 @@ const HomeWorkoutApp = {
       if (formView) formView.style.display = 'none';
       if (usernameEl) usernameEl.textContent = user.username;
       if (avatarEl) avatarEl.textContent = (user.username[0] || 'A').toUpperCase();
-      const adminBtn = document.getElementById('authAdminPortalBtn');
-      if (adminBtn) adminBtn.style.display = (user.is_admin || user.username === 'admin') ? 'block' : 'none';
     } else {
       if (loggedInView) loggedInView.style.display = 'none';
       if (formView) formView.style.display = 'block';
-      const adminBtn = document.getElementById('authAdminPortalBtn');
-      if (adminBtn) adminBtn.style.display = 'none';
       this.switchAuthMode('login');
     }
 
@@ -1616,19 +1693,6 @@ const HomeWorkoutApp = {
           </div>
           <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()">
             ${user.isPro ? 'MANAGE' : 'UPGRADE ↗'}
-          </button>
-        </div>
-
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
-          <div>
-            <h4 style="font-weight: 800; font-size: 1rem;">🛡️ Admin Command Center</h4>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time user monitoring & analytics</span>
-          </div>
-          <button class="level-select-pill" style="background: #0F172A; color: #38BDF8; border: 1px solid #38BDF8;" onclick="window.open('/admin.html', '_blank')">
-            Portal ↗
-          </button>
-        </div>
-
         <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
           <div>
             <h4 style="font-weight: 800; font-size: 1rem;">Reset All Progress</h4>
@@ -1642,10 +1706,14 @@ const HomeWorkoutApp = {
     `;
   },
 
-  resetData() {
-    if (confirm('Reset your weekly goal count and streak back to 0/5?')) {
-      HomeWorkoutStore.resetAllProgress();
-      location.reload();
+  async resetData() {
+    if (confirm('Are you sure you want to reset all your workout progress, streak, and history back to 0/5?')) {
+      await HomeWorkoutStore.resetAllProgress();
+      this.renderHeader();
+      this.renderWeeklyGoalCard();
+      this.renderBodyFocus({ forceRefresh: true });
+      this.renderSettingsScreen();
+      alert('✅ All progress, streaks (0), and weekly workouts (0/5) have been reset.');
     }
   }
 };
