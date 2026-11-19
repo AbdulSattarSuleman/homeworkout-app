@@ -591,6 +591,14 @@ const HomeWorkoutStore = {
     return { user, log: newLog };
   },
 
+  saveWorkoutLogs(logs) {
+    try {
+      localStorage.setItem(this.KEYS.WORKOUT_LOGS, JSON.stringify(logs));
+    } catch (e) {
+      console.warn('Failed to save workout logs:', e);
+    }
+  },
+
   getWorkoutLogs() {
     try {
       const data = localStorage.getItem(this.KEYS.WORKOUT_LOGS);
@@ -621,13 +629,17 @@ const HomeWorkoutStore = {
 
     // Sync to cloud if authenticated
     if (this.getToken()) {
-      const res = await this.apiRequest('/api/workouts/history/delete-selected', 'POST', {
-        log_ids: logIds.map(String)
-      });
-      if (res && typeof res.remaining_count === 'number') {
-        const user = this.getUser();
-        user.weeklyCompletedCount = res.remaining_count;
-        this.saveUser(user);
+      try {
+        const res = await this.apiRequest('/api/workouts/history/delete-selected', 'POST', {
+          log_ids: logIds.map(String)
+        });
+        if (res && typeof res.remaining_count === 'number') {
+          const user = this.getUser();
+          user.weeklyCompletedCount = res.remaining_count;
+          this.saveUser(user);
+        }
+      } catch (err) {
+        console.warn('Failed cloud delete sync:', err);
       }
     } else {
       const user = this.getUser();
@@ -646,9 +658,15 @@ const HomeWorkoutStore = {
       await this.apiRequest('/api/user/reset-progress', 'POST');
     }
 
+    const currentUser = this.getUser();
     const freshUser = JSON.parse(JSON.stringify(this.initialState.user));
     freshUser.streakCount = 0;
     freshUser.weeklyCompletedCount = 0;
+    if (currentUser && currentUser.username) {
+      freshUser.username = currentUser.username;
+      freshUser.id = currentUser.id;
+      freshUser.fitnessLevel = currentUser.fitnessLevel || 'Intermediate';
+    }
     this.saveUser(freshUser);
     return freshUser;
   },

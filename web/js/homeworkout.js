@@ -1541,14 +1541,19 @@ const HomeWorkoutApp = {
     if (count === 0) return;
 
     if (confirm(`Are you sure you want to delete ${count} selected workout session(s)?`)) {
-      const ids = Array.from(this.selectedLogIds);
-      await HomeWorkoutStore.deleteSelectedWorkoutLogs(ids);
-      this.selectedLogIds.clear();
-      this.historySelectionMode = false;
-      await this.renderReportScreen();
-      this.renderWeeklyGoalCard();
-      this.renderHeader();
-      alert(`🗑️ ${count} workout session(s) successfully deleted.`);
+      try {
+        const ids = Array.from(this.selectedLogIds);
+        await HomeWorkoutStore.deleteSelectedWorkoutLogs(ids);
+        this.selectedLogIds.clear();
+        this.historySelectionMode = false;
+        await this.renderReportScreen();
+        this.renderWeeklyGoalCard();
+        this.renderHeader();
+        alert(`🗑️ ${count} workout session(s) successfully deleted.`);
+      } catch (err) {
+        console.error('Delete error:', err);
+        alert('Could not delete workouts: ' + (err.message || 'Unknown error'));
+      }
     }
   },
 
@@ -1671,34 +1676,60 @@ const HomeWorkoutApp = {
 
   renderSettingsScreen() {
     const user = HomeWorkoutStore.getUser();
+    const token = HomeWorkoutStore.getToken();
     const container = document.getElementById('settingsScreenContent');
     if (!container) return;
 
     container.innerHTML = `
+      <!-- User Profile Card -->
+      <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #0052FF, #3B82F6); color: #FFF; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.15rem; box-shadow: 0 4px 10px rgba(0, 82, 255, 0.25);">
+              ${(user.username ? user.username[0] : 'U').toUpperCase()}
+            </div>
+            <div>
+              <h4 style="font-weight: 800; font-size: 1rem; color: var(--text-main); margin: 0 0 2px 0;">${user.username ? user.username : 'Guest Athlete'}</h4>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">${token && user.username ? '🟢 Cloud Sync Active' : '⚪ Offline / Guest Session'}</span>
+            </div>
+          </div>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openAuthModal()" style="font-size: 0.78rem; font-weight: 800; cursor: pointer;">
+            ${token && user.username ? 'Account ▾' : 'Sign In ➔'}
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings & Controls Card -->
       <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
+        <!-- Fitness Level Row -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
           <div>
-            <h4 style="font-weight: 800; font-size: 1rem;">Fitness Level</h4>
+            <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Fitness Level</h4>
             <span style="font-size: 0.8rem; color: var(--text-muted);">Current: ${user.fitnessLevel || 'Intermediate'}</span>
           </div>
-          <button class="level-select-pill" onclick="HomeWorkoutApp.openLevelModal()">
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openLevelModal()" style="cursor: pointer;">
             Change ▾
           </button>
         </div>
 
+        <!-- PRO Subscription Row -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
           <div>
-            <h4 style="font-weight: 800; font-size: 1rem;">PRO Subscription</h4>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">${user.isPro ? 'Active Member' : 'Free Plan'}</span>
+            <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">PRO Membership</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">${user.isPro ? '⭐ Active PRO Member' : 'Standard Free Plan'}</span>
           </div>
           <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()">
             ${user.isPro ? 'MANAGE' : 'UPGRADE ↗'}
+          </button>
+        </div>
+
+        <!-- Reset All Progress Row -->
         <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
           <div>
-            <h4 style="font-weight: 800; font-size: 1rem;">Reset All Progress</h4>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">Restore original 0/5 state</span>
+            <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Reset All Progress</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Clear history & restore 0/5 goal</span>
           </div>
-          <button class="fw-start-btn" style="background: #FEE2E2; color: #DC2626;" onclick="HomeWorkoutApp.resetData()">
+          <button class="fw-start-btn" style="background: #FEE2E2; color: #DC2626; border: none; font-weight: 800; font-size: 0.8rem; padding: 6px 14px; border-radius: 9999px; cursor: pointer;" onclick="HomeWorkoutApp.resetData()">
             RESET
           </button>
         </div>
