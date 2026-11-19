@@ -1453,3 +1453,132 @@ body {
   font-size: 1.8rem;
   margin: 0 auto 16px auto;
 }
+
+/* ======================================================== */
+/* DISCOVER & EXERCISE LIBRARY FILTERS (CLEAN & ATTRACTIVE) */
+/* ======================================================== */
+.explorer-controls-card {
+  background: #FFFFFF;
+  border-radius: 20px;
+  padding: 14px 14px 12px 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.exp-segmented-row {
+  display: flex;
+  background: #F1F3F5;
+  border-radius: var(--radius-full);
+  padding: 3px;
+  gap: 3px;
+  width: 100%;
+}
+
+.exp-seg-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #4B5563;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 7px 6px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.exp-seg-btn:hover {
+  color: var(--text-main);
+}
+
+.exp-seg-btn.active {
+  background: #FFFFFF;
+  color: var(--brand-blue);
+  font-weight: 800;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.exp-scroll-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.exp-scroll-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.exp-filter-pill {
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+  color: #4B5563;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.exp-filter-pill:hover {
+  border-color: #CBD5E1;
+  color: var(--text-main);
+}
+
+.exp-filter-pill.active {
+  background: var(--brand-blue);
+  border-color: var(--brand-blue);
+  color: #FFFFFF;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0, 82, 255, 0.25);
+}
+
+.exp-level-pill {
+  background: #F8F9FA;
+  border: 1px solid #E5E7EB;
+  color: #4B5563;
+  font-family: inherit;
+  font-size: 0.73rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.exp-level-pill:hover {
+  border-color: #CBD5E1;
+}
+
+.exp-level-pill.active {
+  background: #EEF2FF;
+  border-color: var(--brand-blue);
+  color: var(--brand-blue);
+  font-weight: 800;
+}
+
+.exp-summary-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 4px 10px 4px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+

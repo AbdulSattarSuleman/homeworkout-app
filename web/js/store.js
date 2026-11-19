@@ -358,7 +358,7 @@ const HomeWorkoutStore = {
     return this.initialState.challenges.find(c => c.id === id) || this.initialState.challenges[0];
   },
 
-  logWorkoutCompletion(challengeId, dayNumber = 1) {
+  logWorkoutCompletion(challengeId, dayNumber = 1, customTitle = null) {
     const challenge = this.getChallengeById(challengeId);
     const user = this.getUser();
 
@@ -367,12 +367,13 @@ const HomeWorkoutStore = {
     user.streakCount += 1;
     this.saveUser(user);
 
-    // Save to workout history
+    // Save to workout history with accurate title
     const logs = this.getWorkoutLogs();
+    const title = customTitle || (challenge ? challenge.title : 'Workout Session');
     const newLog = {
       id: 'log_' + Date.now(),
-      challengeId: challenge.id,
-      challengeTitle: challenge.title,
+      challengeId: challengeId,
+      challengeTitle: title,
       dayNumber: dayNumber,
       completedAt: new Date().toISOString(),
       durationMinutes: 18,
@@ -389,6 +390,47 @@ const HomeWorkoutStore = {
     return { user, log: newLog };
   },
 
+  logSingleExerciseCompleted(exercise, muscleName = null) {
+    const user = this.getUser();
+    const muscle = muscleName || exercise.target || exercise.muscle || 'Exercise';
+    const mKey = (exercise.muscle || muscle || 'all').toLowerCase();
+
+    // Record into user muscle history
+    if (!user.completedMuscleHistory) user.completedMuscleHistory = {};
+    if (!user.completedMuscleHistory[mKey]) user.completedMuscleHistory[mKey] = [];
+    user.completedMuscleHistory[mKey].push({
+      date: new Date().toISOString(),
+      exerciseIds: [exercise.id],
+      count: 1
+    });
+
+    // Increment progress counters
+    user.weeklyCompletedCount += 1;
+    user.streakCount += 1;
+    this.saveUser(user);
+
+    // Save to workout history logs with the EXACT exercise name and muscle
+    const logs = this.getWorkoutLogs();
+    const newLog = {
+      id: 'log_' + Date.now(),
+      challengeId: `ex-${exercise.id}`,
+      challengeTitle: `${exercise.name} (${muscle.toUpperCase()})`,
+      dayNumber: 1,
+      completedAt: new Date().toISOString(),
+      durationMinutes: Math.round((exercise.durationSeconds || 40) / 60) || 4,
+      caloriesBurned: 35
+    };
+    logs.unshift(newLog);
+
+    try {
+      localStorage.setItem(this.KEYS.WORKOUT_LOGS, JSON.stringify(logs));
+    } catch (e) {
+      console.warn('Failed to save log:', e);
+    }
+
+    return { user, log: newLog };
+  },
+
   getWorkoutLogs() {
     try {
       const data = localStorage.getItem(this.KEYS.WORKOUT_LOGS);
@@ -396,6 +438,11 @@ const HomeWorkoutStore = {
     } catch (e) {
       return [];
     }
+  },
+
+  clearWorkoutLogs() {
+    localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
+    return [];
   },
 
   resetAllProgress() {

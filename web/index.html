@@ -162,45 +162,46 @@
             <input type="text" class="hw-search-input" id="explorerSearchInput" placeholder="Filter by name (e.g. bench press, lunge, warm-up)...">
           </div>
 
-          <!-- Location Filter Row (Home vs Gym) -->
-          <div class="location-toggle-row" style="margin-bottom: 10px;" id="explorerLocationRow">
-            <button class="loc-toggle-btn active" data-loc="All" onclick="HomeWorkoutApp.filterExplorerLocation('All')">
-              🌐 All (1,324)
-            </button>
-            <button class="loc-toggle-btn" data-loc="Home" onclick="HomeWorkoutApp.filterExplorerLocation('Home')">
-              🏠 Home (401)
-            </button>
-            <button class="loc-toggle-btn" data-loc="Gym" onclick="HomeWorkoutApp.filterExplorerLocation('Gym')">
-              🏋️ Gym (923)
-            </button>
+          <!-- Clean, Attractive Filter Card Container -->
+          <div class="explorer-controls-card">
+            <!-- 1. Location Segmented Control (All / Home / Gym) -->
+            <div class="exp-segmented-row" id="explorerLocationRow">
+              <button class="exp-seg-btn active" data-loc="All" onclick="HomeWorkoutApp.filterExplorerLocation('All')">
+                🌐 All (1,324)
+              </button>
+              <button class="exp-seg-btn" data-loc="Home" onclick="HomeWorkoutApp.filterExplorerLocation('Home')">
+                🏠 Home (401)
+              </button>
+              <button class="exp-seg-btn" data-loc="Gym" onclick="HomeWorkoutApp.filterExplorerLocation('Gym')">
+                🏋️ Gym (923)
+              </button>
+            </div>
+
+            <!-- 2. Level Filter Pills -->
+            <div class="exp-scroll-strip" id="explorerLevelRow">
+              <button class="exp-level-pill active" data-lvl="All" onclick="HomeWorkoutApp.filterExplorerLevel('All')">
+                All Levels
+              </button>
+              <button class="exp-level-pill" data-lvl="Beginner" onclick="HomeWorkoutApp.filterExplorerLevel('Beginner')">
+                🟢 Beginner
+              </button>
+              <button class="exp-level-pill" data-lvl="Intermediate" onclick="HomeWorkoutApp.filterExplorerLevel('Intermediate')">
+                🟡 Intermediate
+              </button>
+              <button class="exp-level-pill" data-lvl="Advanced" onclick="HomeWorkoutApp.filterExplorerLevel('Advanced')">
+                🔴 Advanced
+              </button>
+            </div>
+
+            <!-- 3. Muscle Filter Pills (Horizontal Scroll) -->
+            <div class="exp-scroll-strip" id="explorerMusclePills">
+              <!-- Injected dynamically with .exp-filter-pill -->
+            </div>
           </div>
 
-          <!-- Explorer Level Filter Row -->
-          <div class="level-toggle-row" style="margin-bottom: 10px;" id="explorerLevelRow">
-            <button class="level-pill-btn active" data-lvl="All" onclick="HomeWorkoutApp.filterExplorerLevel('All')">
-              All Levels
-            </button>
-            <button class="level-pill-btn" data-lvl="Beginner" onclick="HomeWorkoutApp.filterExplorerLevel('Beginner')">
-              🟢 Beginner
-            </button>
-            <button class="level-pill-btn" data-lvl="Intermediate" onclick="HomeWorkoutApp.filterExplorerLevel('Intermediate')">
-              🟡 Intermediate
-            </button>
-            <button class="level-pill-btn" data-lvl="Advanced" onclick="HomeWorkoutApp.filterExplorerLevel('Advanced')">
-              🔴 Advanced
-            </button>
-          </div>
-
-          <!-- Muscle Filter Pills Row -->
-          <div class="filter-pills-row" style="padding: 0 0 12px 0;" id="explorerMusclePills">
-            <!-- Injected dynamically: All, Chest, Warmup, Abs, Arms, Legs, Shoulders, Back -->
-          </div>
-
-          <!-- Results Header & Counter -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <span id="explorerResultsCount" style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">
-              Loading Exercises...
-            </span>
+          <!-- Results Summary Bar -->
+          <div class="exp-summary-bar">
+            <span id="explorerResultsCount">Loading Exercises...</span>
           </div>
 
           <!-- Explorer Cards Stack -->

@@ -647,7 +647,7 @@ const HomeWorkoutApp = {
     // 1. Update location buttons
     const locRow = document.getElementById('explorerLocationRow');
     if (locRow) {
-      locRow.querySelectorAll('.loc-toggle-btn').forEach(btn => {
+      locRow.querySelectorAll('.exp-seg-btn').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-loc') === this.explorerLocation);
       });
     }
@@ -655,7 +655,7 @@ const HomeWorkoutApp = {
     // 2. Update level buttons
     const lvlRow = document.getElementById('explorerLevelRow');
     if (lvlRow) {
-      lvlRow.querySelectorAll('.level-pill-btn').forEach(btn => {
+      lvlRow.querySelectorAll('.exp-level-pill').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-lvl') === this.explorerLevel);
       });
     }
@@ -666,16 +666,16 @@ const HomeWorkoutApp = {
       const muscles = [
         { id: 'All', name: 'All Muscles' },
         { id: 'Chest', name: '🫁 Chest' },
-        { id: 'Warmup', name: '🔥 Warmup & Mobility' },
+        { id: 'Back', name: '🧗 Back' },
+        { id: 'Warmup', name: '🔥 Warmup' },
         { id: 'Abs & Core', name: '🍫 Abs & Core' },
         { id: 'Arms', name: '🦾 Arms' },
         { id: 'Legs', name: '🦵 Legs' },
-        { id: 'Shoulders', name: '🛡️ Shoulders' },
-        { id: 'Back', name: '🧗 Back' }
+        { id: 'Shoulders', name: '🛡️ Shoulders' }
       ];
 
       pillsRow.innerHTML = muscles.map(m => `
-        <button class="filter-pill-btn ${this.explorerMuscle === m.id ? 'active' : ''}" onclick="HomeWorkoutApp.filterExplorerMuscle('${m.id}')">
+        <button class="exp-filter-pill ${this.explorerMuscle === m.id ? 'active' : ''}" onclick="HomeWorkoutApp.filterExplorerMuscle('${m.id}')">
           ${m.name}
         </button>
       `).join('');
@@ -698,9 +698,9 @@ const HomeWorkoutApp = {
     }
 
     if (countEl) {
-      const locText = this.explorerLocation === 'All' ? 'All Environments' : (this.explorerLocation === 'Home' ? '🏠 Home' : '🏋️ Gym');
+      const locText = this.explorerLocation === 'All' ? 'All Environments' : (this.explorerLocation === 'Home' ? 'Home' : 'Gym');
       const lvlText = this.explorerLevel === 'All' ? 'All Levels' : `${this.explorerLevel}`;
-      countEl.textContent = `Found ${exercises.length} Exercises • ${this.explorerMuscle} • ${lvlText} (${locText})`;
+      countEl.innerHTML = `Showing <strong style="color: var(--brand-blue);">${exercises.length}</strong> exercises • <span>${this.explorerMuscle}</span> • <span>${lvlText}</span> <span>(${locText})</span>`;
     }
 
     if (exercises.length === 0) {
@@ -913,10 +913,13 @@ const HomeWorkoutApp = {
     }
     if (!found) return;
 
+    const muscleGroup = found.target || found.muscle || (this.activeBodyFocus ? this.activeBodyFocus.toUpperCase() : 'FITNESS');
     this.activeWorkout = {
       id: `ex-${found.id}`,
-      title: found.name.toUpperCase(),
+      title: `${found.name} (${muscleGroup})`,
+      muscle: muscleGroup,
       currentDay: 1,
+      isSingleExercise: true,
       exercises: [found]
     };
     this.activeExerciseIndex = 0;
@@ -1096,12 +1099,20 @@ const HomeWorkoutApp = {
 
     let result;
     const isDaily = this.activeWorkout && this.activeWorkout.isDailyMuscleRoutine;
+    const isSingle = this.activeWorkout && this.activeWorkout.isSingleExercise;
 
     if (isDaily) {
       const exerciseIds = this.activeWorkout.exercises.map(e => e.id);
       result = HomeWorkoutStore.logMuscleSessionCompleted(this.activeWorkout.muscle, exerciseIds);
+    } else if (isSingle && this.activeWorkout.exercises && this.activeWorkout.exercises.length > 0) {
+      const ex = this.activeWorkout.exercises[0];
+      result = HomeWorkoutStore.logSingleExerciseCompleted(ex, this.activeWorkout.muscle);
     } else {
-      result = HomeWorkoutStore.logWorkoutCompletion(this.activeWorkout.id, 1);
+      result = HomeWorkoutStore.logWorkoutCompletion(
+        this.activeWorkout.id,
+        this.activeWorkout.currentDay || 1,
+        this.activeWorkout.title
+      );
     }
 
     const modal = document.getElementById('workoutRunnerModal');
@@ -1112,11 +1123,12 @@ const HomeWorkoutApp = {
     this.renderWeeklyGoalCard();
     this.renderBodyFocus({ forceRefresh: true });
 
+    const workoutTitle = result && result.log ? result.log.challengeTitle : (this.activeWorkout.title || 'WORKOUT');
     if (isDaily) {
       const mName = this.activeWorkout.muscle.toUpperCase();
-      alert(`🎉 ${mName} WORKOUT COMPLETED!\n\nAwesome work! All 5 exercises finished.\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥\n\n✨ Rotation Saved: Next time you do ${mName}, 5 fresh, unrepeated exercises will be recommended!`);
+      alert(`🎉 ${mName} ROUTINE COMPLETED!\n\nAwesome work! All 5 exercises finished.\n• Logged: ${workoutTitle}\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥\n\n✨ Rotation Saved: Next time you do ${mName}, 5 fresh, unrepeated exercises will be recommended!`);
     } else {
-      alert(`🎉 WORKOUT COMPLETED!\n\nAwesome work! Day 1 is logged.\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥`);
+      alert(`🎉 WORKOUT COMPLETED!\n\nAwesome work!\n• Logged: "${workoutTitle}"\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥`);
     }
   },
 
@@ -1286,7 +1298,14 @@ const HomeWorkoutApp = {
         </div>
       </div>
 
-      <h3 class="section-bold-title" style="font-size: 1.05rem; margin-bottom: 12px;">Workout History</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 class="section-bold-title" style="font-size: 1.05rem; margin: 0;">Workout History</h3>
+        ${logs.length > 0 ? `
+          <button onclick="HomeWorkoutApp.clearReportHistory()" style="background: #FEE2E2; color: #DC2626; border: none; font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 9999px; cursor: pointer;">
+            🗑️ Clear History
+          </button>
+        ` : ''}
+      </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
         ${logs.length > 0 ? logs.map(l => `
           <div style="background: #FFFFFF; border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow-card); display: flex; justify-content: space-between; align-items: center;">
@@ -1307,6 +1326,13 @@ const HomeWorkoutApp = {
         `}
       </div>
     `;
+  },
+
+  clearReportHistory() {
+    if (confirm('Clear your completed workout history?')) {
+      HomeWorkoutStore.clearWorkoutLogs();
+      this.renderReportScreen();
+    }
   },
 
   renderSettingsScreen() {
