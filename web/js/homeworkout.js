@@ -94,6 +94,16 @@ const HomeWorkoutApp = {
       proBtn.addEventListener('click', () => this.openProModal());
     }
 
+    // User Account / Sign In Badge Button
+    const userBtn = document.getElementById('headerUserBtn');
+    if (userBtn) {
+      userBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openAuthModal();
+      });
+    }
+
     // More > Button
     const moreBtn = document.getElementById('challengeMoreBtn');
     if (moreBtn) {
