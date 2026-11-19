@@ -99,13 +99,6 @@ const HomeWorkoutApp = {
     const streakEl = document.getElementById('streakFlameNum');
     if (streakEl) streakEl.textContent = user.streakCount;
 
-    const levelBtn = document.getElementById('headerLevelBtn');
-    if (levelBtn) {
-      const lvl = user.fitnessLevel || 'Intermediate';
-      const icon = lvl === 'Beginner' ? '🟢' : (lvl === 'Advanced' ? '🔴' : '🟡');
-      levelBtn.innerHTML = `${icon} ${lvl} ▾`;
-    }
-
     const proBtn = document.getElementById('headerProBtn');
     if (proBtn) {
       proBtn.innerHTML = user.isPro 
@@ -230,24 +223,24 @@ const HomeWorkoutApp = {
   },
 
   renderBodyFocus() {
-    const locRow = document.getElementById('bodyFocusLocationRow');
-    const lvlRow = document.getElementById('bodyFocusLevelRow');
+    const segRow = document.getElementById('bodyFocusLocationSegment');
+    const lvlBtnText = document.getElementById('bfLevelText');
     const chipsRow = document.getElementById('categoryChipsRow');
     const workoutsList = document.getElementById('focusWorkoutsList');
     if (!workoutsList) return;
 
-    // Update location toggle buttons active state
-    if (locRow) {
-      locRow.querySelectorAll('.loc-toggle-btn').forEach(btn => {
+    // Update location segment active state
+    if (segRow) {
+      segRow.querySelectorAll('.seg-btn').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-loc') === this.activeFocusLocation);
       });
     }
 
-    // Update level toggle buttons active state
-    if (lvlRow) {
-      lvlRow.querySelectorAll('.level-pill-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-lvl') === this.activeFocusLevel);
-      });
+    // Update level pill text
+    if (lvlBtnText) {
+      const lvl = this.activeFocusLevel || 'Intermediate';
+      const icon = lvl === 'Beginner' ? '🟢' : (lvl === 'Advanced' ? '🔴' : '🟡');
+      lvlBtnText.innerHTML = `${icon} ${lvl}`;
     }
 
     // Update muscle category chips
@@ -273,68 +266,56 @@ const HomeWorkoutApp = {
     
     if (!exercises || exercises.length === 0) {
       workoutsList.innerHTML = `
-        <div style="text-align: center; padding: 24px; color: var(--text-muted);">
-          <p style="font-weight: 700;">No exercises found for this level and environment</p>
-          <button class="fw-start-btn" style="margin-top: 8px;" onclick="HomeWorkoutApp.switchFocusLocation('All'); HomeWorkoutApp.switchFocusLevel('All');">Show All Exercises</button>
+        <div style="text-align: center; padding: 28px 16px; color: var(--text-muted); background: #FFFFFF; border-radius: 16px;">
+          <p style="font-weight: 700; margin-bottom: 6px;">No exercises found for this filter</p>
+          <button class="fw-start-btn" style="background: var(--brand-blue); color: #FFF;" onclick="HomeWorkoutApp.switchFocusLocation('All'); HomeWorkoutApp.switchFocusLevel('All');">Show All Exercises</button>
         </div>
       `;
       return;
     }
 
-    const locLabel = this.activeFocusLocation === 'All' ? 'Home & Gym' : (this.activeFocusLocation === 'Home' ? '🏠 Home (No Gear)' : '🏋️ Gym');
     const muscleName = this.activeBodyFocus.toUpperCase();
     const isRotated = routineData.isRotated;
-    const routineBadgeText = isRotated 
-      ? `✨ Fresh Routine Active (Unrepeated from last session)` 
-      : `🎯 Personalized ${this.activeFocusLevel} Routine`;
 
+    // Sleek, minimal routine card
     const bannerHtml = `
-      <div class="routine-header-banner">
-        <div class="routine-top-row">
-          <div class="routine-title-box">
-            <span class="routine-sub-badge ${isRotated ? 'routine-badge-rotated' : ''}">${routineBadgeText}</span>
-            <h3 class="routine-main-title">Today's ${muscleName} Routine (${exercises.length} Exercises)</h3>
+      <div class="routine-card">
+        <div class="routine-card-header">
+          <div class="routine-card-info">
+            <span class="routine-pill-badge ${isRotated ? 'fresh' : ''}">
+              ${isRotated ? '✨ Fresh Routine (Unrepeated)' : '🎯 Today\'s Routine'}
+            </span>
+            <h3 class="routine-card-title">${muscleName} (${exercises.length} Exercises)</h3>
           </div>
-          <button class="routine-shuffle-btn" onclick="HomeWorkoutApp.shuffleRoutine()" title="Get 5 different unrepeated exercises">
-            🔀 Shuffle New 5
+          <button class="routine-shuffle-btn" onclick="HomeWorkoutApp.shuffleRoutine()" title="Shuffle 5 different exercises">
+            🔀 Shuffle
           </button>
         </div>
-        <p class="routine-desc-text">
-          Level: <strong>${this.activeFocusLevel}</strong> • ${locLabel}. When you complete this session, 5 new exercises will be rotated next week!
-        </p>
-        <button class="routine-primary-start-btn" onclick="HomeWorkoutApp.startFullDailyRoutine()">
-          ▶ START TODAY'S ${exercises.length} EXERCISES (DAY 1) ➔
+        <button class="routine-card-start-btn" onclick="HomeWorkoutApp.startFullDailyRoutine()">
+          ▶ START DAY 1 (${exercises.length} EXERCISES) ➔
         </button>
       </div>
     `;
 
-    const cardsHtml = exercises.map((ex, idx) => {
-      const lvl = ex.level || 'Intermediate';
-      const lvlClass = lvl.toLowerCase();
-      const lvlIcon = lvl === 'Beginner' ? '🟢' : (lvl === 'Advanced' ? '🔴' : '🟡');
-      return `
-        <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
-          <div class="fw-left-wrap">
-            <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'54\\' height=\\'54\\' viewBox=\\'0 0 54 54\\'><rect width=\\'54\\' height=\\'54\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
-            <div class="fw-info-wrap">
-              <h4 class="fw-title">${idx + 1}. ${ex.name}</h4>
-              <div class="fw-meta">
-                <span class="level-tag ${lvlClass}">${lvlIcon} ${lvl}</span>
-                <span>•</span>
-                <span>${ex.reps || '12-15 reps'}</span>
-                <span>•</span>
-                <span>🎯 ${ex.target || ex.muscle}</span>
-                <span>•</span>
-                <span style="color: ${ex.location === 'Home' ? '#10B981' : '#0052FF'}; font-weight: 700;">${ex.location === 'Home' ? '🏠 Home' : '🏋️ Gym'}</span>
-              </div>
+    // Clean, roomy, non-overlapping exercise items
+    const cardsHtml = exercises.map((ex, idx) => `
+      <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
+        <div class="fw-left-wrap">
+          <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'54\\' height=\\'54\\' viewBox=\\'0 0 54 54\\'><rect width=\\'54\\' height=\\'54\\' rx=\\'12\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
+          <div class="fw-info-wrap">
+            <h4 class="fw-title">${idx + 1}. ${ex.name}</h4>
+            <div class="fw-meta">
+              <span>${ex.reps || '12-15 reps'}</span>
+              <span class="fw-meta-dot">•</span>
+              <span>🎯 ${ex.target || ex.muscle}</span>
             </div>
           </div>
-          <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
-            START ➔
-          </button>
         </div>
-      `;
-    }).join('');
+        <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
+          START ➔
+        </button>
+      </div>
+    `).join('');
 
     workoutsList.innerHTML = bannerHtml + cardsHtml;
   },

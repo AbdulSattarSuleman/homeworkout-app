@@ -19,15 +19,12 @@
   <!-- Authentic Mobile Phone Frame Container (420px) -->
   <div class="hw-phone-viewport">
 
-    <!-- Main Header -->
+    <!-- Main Header (Clean, Authentic Layout Matching Original Screenshot) -->
     <header class="hw-app-header">
       <h1 class="hw-brand-title">HOME WORKOUT</h1>
       <div class="hw-header-right">
-        <button class="level-badge-btn" id="headerLevelBtn" onclick="HomeWorkoutApp.openLevelModal()" title="Change Fitness Level">
-          🟡 Intermediate ▾
-        </button>
         <button class="flame-icon-btn" title="Streak Flame">
-          🔥
+          🔥 <span class="streak-count-badge" id="streakFlameNum">18</span>
         </button>
         <button class="pro-badge-btn" id="headerProBtn">
           👑 PRO ↗
@@ -93,52 +90,36 @@
           <!-- Injected dynamically -->
         </div>
 
-        <!-- Body Focus & Muscle Explorer Section -->
+        <!-- Body Focus & Muscle Section (Clean, Spacious Layout) -->
         <div class="body-focus-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h2 class="section-bold-title">Body Focus & Muscles</h2>
-            <button class="more-link-btn" onclick="HomeWorkoutApp.openExerciseExplorer()" style="font-size: 0.8rem; background: transparent; border: none; cursor: pointer; color: var(--brand-blue); font-weight: 700;">
-              All 1,324 Exercises ❯
+          <div class="section-header-row">
+            <h2 class="section-bold-title">Body Focus</h2>
+            <button class="more-link-btn" onclick="HomeWorkoutApp.openExerciseExplorer()" style="font-size: 0.82rem;">
+              Library (1,324) ❯
             </button>
           </div>
 
-          <!-- Location Selector: Home vs Gym -->
-          <div class="location-toggle-row" id="bodyFocusLocationRow">
-            <button class="loc-toggle-btn active" data-loc="Home" onclick="HomeWorkoutApp.switchFocusLocation('Home')">
-              🏠 Home (No Gear)
-            </button>
-            <button class="loc-toggle-btn" data-loc="Gym" onclick="HomeWorkoutApp.switchFocusLocation('Gym')">
-              🏋️ Gym (Equipment)
-            </button>
-            <button class="loc-toggle-btn" data-loc="All" onclick="HomeWorkoutApp.switchFocusLocation('All')">
-              🌐 All
-            </button>
-          </div>
-
-          <!-- Level Selector: Beginner / Intermediate / Advanced -->
-          <div class="level-toggle-row" id="bodyFocusLevelRow">
-            <button class="level-pill-btn active" data-lvl="Intermediate" onclick="HomeWorkoutApp.switchFocusLevel('Intermediate')">
-              🟡 Intermediate
-            </button>
-            <button class="level-pill-btn" data-lvl="Beginner" onclick="HomeWorkoutApp.switchFocusLevel('Beginner')">
-              🟢 Beginner
-            </button>
-            <button class="level-pill-btn" data-lvl="Advanced" onclick="HomeWorkoutApp.switchFocusLevel('Advanced')">
-              🔴 Advanced
-            </button>
-            <button class="level-pill-btn" data-lvl="All" onclick="HomeWorkoutApp.switchFocusLevel('All')">
-              All Levels
-            </button>
-          </div>
-          
-          <!-- Muscle Filter Chips Row -->
+          <!-- 1. Authentic Muscle Category Chips Row -->
           <div class="category-chips-row" id="categoryChipsRow">
             <!-- Filter chips injected dynamically -->
           </div>
 
-          <!-- Focus Workouts List -->
+          <!-- 2. Clean Single Controls Strip (Environment Segmented Toggle + Level Pill) -->
+          <div class="body-focus-control-strip">
+            <div class="segmented-control" id="bodyFocusLocationSegment">
+              <button class="seg-btn active" data-loc="Home" onclick="HomeWorkoutApp.switchFocusLocation('Home')">🏠 Home</button>
+              <button class="seg-btn" data-loc="Gym" onclick="HomeWorkoutApp.switchFocusLocation('Gym')">🏋️ Gym</button>
+              <button class="seg-btn" data-loc="All" onclick="HomeWorkoutApp.switchFocusLocation('All')">🌐 All</button>
+            </div>
+
+            <button class="level-select-pill" id="bodyFocusLevelBtn" onclick="HomeWorkoutApp.openLevelModal()" title="Change Fitness Level">
+              <span id="bfLevelText">🟡 Intermediate</span> ▾
+            </button>
+          </div>
+
+          <!-- 3. Focus Workouts List -->
           <div class="focus-workouts-list" id="focusWorkoutsList">
-            <!-- Focus workouts injected dynamically -->
+            <!-- Routine banner and workouts injected dynamically -->
           </div>
         </div>
 

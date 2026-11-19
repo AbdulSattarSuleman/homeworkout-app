@@ -352,34 +352,42 @@ body {
   gap: 2px;
 }
 
-/* Horizontal Snap Carousel */
+/* Horizontal Snap Carousel (Clean Spacing Left & Right) */
 .challenge-carousel {
   display: flex;
   gap: 14px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding-bottom: 8px;
-  margin: 0 -18px 22px -18px;
-  padding-left: 18px;
-  padding-right: 18px;
+  scroll-padding-left: 18px;
+  scroll-padding-right: 18px;
+  margin: 0 -18px 24px -18px;
+  padding: 4px 18px 18px 18px;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .challenge-carousel::-webkit-scrollbar {
   display: none;
 }
 
+/* Trailing spacing spacer for carousel end */
+.challenge-carousel::after {
+  content: '';
+  flex: 0 0 6px;
+}
+
 /* Challenge Card */
 .challenge-card {
-  flex: 0 0 92%;
-  max-width: 360px;
+  flex: 0 0 318px;
+  width: 318px;
   border-radius: 22px;
-  padding: 20px;
+  padding: 20px 18px 18px 18px;
   color: #FFFFFF;
   position: relative;
   overflow: hidden;
   scroll-snap-align: start;
-  box-shadow: 0 6px 20px rgba(0, 82, 255, 0.2);
+  box-sizing: border-box;
+  box-shadow: 0 8px 24px rgba(0, 82, 255, 0.18);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -584,109 +592,104 @@ body {
   background: var(--brand-blue-light);
 }
 
-/* Location Toggle (Home vs Gym) */
-.location-toggle-row {
+/* Section Header Row */
+.section-header-row {
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.location-toggle-row::-webkit-scrollbar {
-  display: none;
+/* Single Sleek Control Strip under Muscle Chips */
+.body-focus-control-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  gap: 10px;
 }
 
-.loc-toggle-btn {
-  background: var(--surface-subtle);
-  border: 1px solid transparent;
+/* iOS-style Segmented Control (Home vs Gym) */
+.segmented-control {
+  display: inline-flex;
+  background: #E5E7EB;
+  border-radius: var(--radius-full);
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-btn {
+  background: transparent;
+  border: none;
   color: #4B5563;
   font-family: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.16s ease;
-}
-
-.loc-toggle-btn:hover {
-  background: #E5E7EB;
-}
-
-.loc-toggle-btn.active {
-  background: var(--brand-blue-light);
-  color: var(--brand-blue);
-  border-color: rgba(0, 82, 255, 0.25);
-  font-weight: 800;
-}
-
-/* Level Toggle Pills */
-.level-toggle-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.level-toggle-row::-webkit-scrollbar {
-  display: none;
-}
-
-.level-pill-btn {
-  background: #FFFFFF;
-  border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.74rem;
+  font-size: 0.76rem;
   font-weight: 700;
   padding: 5px 12px;
   border-radius: var(--radius-full);
   cursor: pointer;
+  transition: all 0.15s ease;
   white-space: nowrap;
-  transition: all 0.16s ease;
 }
 
-.level-pill-btn:hover {
-  background: var(--surface-subtle);
+.seg-btn:hover {
+  color: var(--text-main);
 }
 
-.level-pill-btn.active {
-  background: #1F2937;
-  color: #FFFFFF;
-  border-color: #1F2937;
+.seg-btn.active {
+  background: #FFFFFF;
+  color: var(--brand-blue);
   font-weight: 800;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
-/* Daily Muscle Routine Banner */
-.routine-header-banner {
+/* Level Dropdown Pill */
+.level-select-pill {
   background: #FFFFFF;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  box-shadow: var(--shadow-card);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
 }
 
-.routine-banner-top,
-.routine-top-row {
+.level-select-pill:hover {
+  background: #F9FAFB;
+  border-color: #D1D5DB;
+}
+
+/* Sleek, Roomy Routine Card */
+.routine-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.routine-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 }
 
-.routine-title-box {
+.routine-card-info {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.routine-sub-badge {
-  display: inline-block;
+.routine-pill-badge {
   font-size: 0.68rem;
   font-weight: 800;
   color: var(--brand-blue);
@@ -694,72 +697,30 @@ body {
   letter-spacing: 0.3px;
 }
 
-.routine-banner-title,
-.routine-main-title {
-  font-size: 0.95rem;
+.routine-pill-badge.fresh {
+  color: #10B981;
+}
+
+.routine-card-title {
+  font-size: 1.02rem;
   font-weight: 900;
   color: var(--text-main);
   text-transform: uppercase;
-  letter-spacing: -0.2px;
   margin: 0;
-}
-
-.routine-desc-text {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.35;
-  margin: 4px 0 10px 0;
-}
-
-.routine-badge-rotated {
-  font-size: 0.7rem;
-  font-weight: 800;
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  background: #EFF6FF;
-  color: var(--brand-blue);
-  border: 1px solid rgba(0, 82, 255, 0.2);
-}
-
-.routine-actions-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.routine-primary-start-btn {
-  flex: 1.5;
-  background: var(--brand-blue);
-  color: #FFFFFF;
-  border: none;
-  font-family: inherit;
-  font-size: 0.8rem;
-  font-weight: 800;
-  padding: 9px 14px;
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.15s ease;
-}
-
-.routine-primary-start-btn:hover {
-  background: #0044D6;
+  letter-spacing: -0.2px;
 }
 
 .routine-shuffle-btn {
   background: var(--surface-subtle);
-  color: var(--text-main);
   border: 1px solid var(--border-subtle);
+  color: var(--text-main);
   font-family: inherit;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
-  padding: 9px 12px;
+  padding: 6px 11px;
   border-radius: var(--radius-full);
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   transition: all 0.15s ease;
@@ -767,6 +728,29 @@ body {
 
 .routine-shuffle-btn:hover {
   background: #E5E7EB;
+}
+
+.routine-card-start-btn {
+  width: 100%;
+  background: var(--brand-blue);
+  color: #FFFFFF;
+  border: none;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 10px 16px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  letter-spacing: 0.2px;
+  transition: background 0.15s ease;
+}
+
+.routine-card-start-btn:hover {
+  background: #0044D6;
 }
 
 /* Level Tags on Exercise Cards */
@@ -875,9 +859,9 @@ body {
 
 .focus-workout-card {
   background: #FFFFFF;
-  border-radius: var(--radius-md);
+  border-radius: 16px;
   padding: 12px 14px;
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -887,8 +871,8 @@ body {
 }
 
 .focus-workout-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 .fw-left-wrap {
@@ -904,18 +888,19 @@ body {
   height: 52px;
   border-radius: 12px;
   object-fit: cover;
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
   flex-shrink: 0;
 }
 
 .fw-info-wrap {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .fw-title {
-  font-size: 0.92rem;
+  font-size: 0.94rem;
   font-weight: 800;
   color: var(--text-main);
   margin-bottom: 3px;
@@ -925,11 +910,19 @@ body {
 }
 
 .fw-meta {
-  font-size: 0.74rem;
-  color: var(--text-muted);
+  font-size: 0.76rem;
+  color: #6B7280;
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fw-meta-dot {
+  color: #D1D5DB;
+  font-weight: 700;
 }
 
 .fw-start-btn {
@@ -943,6 +936,7 @@ body {
   border-radius: var(--radius-full);
   cursor: pointer;
   flex-shrink: 0;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
