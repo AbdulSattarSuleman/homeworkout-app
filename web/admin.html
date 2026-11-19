@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Command Center • Home Workout</title>
+  <link rel="icon" type="image/png" href="assets/images/app_icon.png">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-base: #0B0F19;
+      --bg-card: #151D2E;
+      --bg-card-hover: #1E293B;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(56, 189, 248, 0.3);
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --accent-blue: #38BDF8;
+      --accent-emerald: #10B981;
+      --accent-amber: #F59E0B;
+      --accent-rose: #F43F5E;
+      --accent-purple: #A855F7;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Top Navigation Bar */
+    .admin-navbar {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      font-size: 1.15rem;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #FFF;
+    }
+
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      color: var(--accent-emerald);
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      box-shadow: 0 0 8px var(--accent-emerald);
+      animation: pulseDot 1.5s infinite;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .select-dropdown {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      font-weight: 700;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 7px 14px;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary { background: var(--accent-blue); color: #000; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-secondary { background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); }
+    .btn-secondary:hover { background: var(--bg-card-hover); }
+    .btn-danger { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.3); }
+
+    /* Main Container */
+    .admin-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    /* KPI Cards Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .kpi-card:hover {
+      border-color: var(--border-highlight);
+      transform: translateY(-2px);
+    }
+
+    .kpi-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .kpi-title {
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .kpi-icon {
+      font-size: 1.2rem;
+    }
+
+    .kpi-value {
+      font-size: 2rem;
+      font-weight: 900;
+      color: #FFF;
+      margin-bottom: 8px;
+      letter-spacing: -1px;
+    }
+
+    .kpi-subtext {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Tabs Navigation */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 20px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 800;
+      padding: 10px 18px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover { color: #FFF; }
+    .tab-btn.active {
+      color: var(--accent-blue);
+      border-bottom-color: var(--accent-blue);
+    }
+
+    /* Filter Bar */
+    .filter-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .search-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 280px;
+    }
+
+    .search-input {
+      background: transparent;
+      border: none;
+      color: #FFF;
+      font-family: inherit;
+      font-size: 0.82rem;
+      outline: none;
+      width: 100%;
+    }
+
+    .pill-filters {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .filter-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-pill:hover, .filter-pill.active {
+      background: var(--accent-blue);
+      color: #000;
+      border-color: var(--accent-blue);
+    }
+
+    /* Activity Stream Table / Cards */
+    .activity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .activity-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      transition: all 0.2s;
+    }
+
+    .activity-card:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .act-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .act-type-badge {
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 4px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .type-workout { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .type-auth { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .type-nav { background: rgba(168, 85, 247, 0.15); color: var(--accent-purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .type-interaction { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    .act-user-tag {
+      font-weight: 800;
+      font-size: 0.85rem;
+      color: #FFF;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .act-details {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 450px;
+    }
+
+    .act-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .act-device-pill {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      color: #CBD5E1;
+    }
+
+    /* Users Table */
+    .data-table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow-x: auto;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.82rem;
+    }
+
+    .data-table th {
+      background: rgba(0, 0, 0, 0.25);
+      color: var(--text-muted);
+      padding: 12px 16px;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .data-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    .data-table tr:hover td {
+      background: var(--bg-card-hover);
+    }
+
+    /* Auth Gate Modal */
+    .admin-gate-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(11, 15, 25, 0.95);
+      backdrop-filter: blur(16px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .admin-gate-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-highlight);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 420px;
+      padding: 32px 28px;
+      text-align: center;
+    }
+
+    .gate-icon {
+      font-size: 2.8rem;
+      margin-bottom: 14px;
+    }
+
+    .gate-title {
+      font-size: 1.4rem;
+      font-weight: 900;
+      margin-bottom: 6px;
+    }
+
+    .gate-sub {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      line-height: 1.4;
+    }
+
+    .gate-input-group {
+      text-align: left;
+      margin-bottom: 14px;
+    }
+
+    .gate-label {
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    .gate-input {
+      width: 100%;
+      background: #0B0F19;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-family: inherit;
+      color: #FFF;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    .gate-input:focus { border-color: var(--accent-blue); }
+
+    /* Detail Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 90;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      width: 100%;
+      max-width: 800px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ADMIN ACCESS GATE (Shown if not authenticated) -->
+  <div class="admin-gate-overlay" id="adminGateModal">
+    <div class="admin-gate-card">
+      <div class="gate-icon">🛡️</div>
+      <h2 class="gate-title">Admin Command Center</h2>
+      <p class="gate-sub">Access-restricted monitoring portal. Please enter your administrator credentials to proceed.</p>
+      
+      <div id="gateAlert" style="display: none; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.3); color: var(--accent-rose); padding: 8px 12px; border-radius: var(--radius-sm); font-size: 0.78rem; margin-bottom: 14px; text-align: left;">
+      </div>
+
+      <div class="gate-input-group">
+        <label class="gate-label">Admin Username</label>
+        <input type="text" id="adminUserField" class="gate-input" value="admin" placeholder="Username">
+      </div>
+
+      <div class="gate-input-group">
+        <label class="gate-label">Admin Password</label>
+        <input type="password" id="adminPassField" class="gate-input" placeholder="Password" onkeydown="if(event.key === 'Enter') AdminApp.login()">
+      </div>
+
+      <button class="btn btn-primary" style="width: 100%; padding: 12px; justify-content: center; margin-top: 10px; font-size: 0.88rem;" onclick="AdminApp.login()">
+        🔓 Authenticate & Enter
+      </button>
+
+      <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 14px;">
+        Default admin: <strong>admin</strong> • password: <strong>admin123</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- ADMIN TOP NAVBAR -->
+  <header class="admin-navbar">
+    <div class="brand-wrap">
+      <div class="brand-logo">
+        🛡️ HOME WORKOUT <span style="color: var(--accent-blue); font-weight: 500;">ADMIN</span>
+      </div>
+      <div class="live-indicator">
+        <span class="live-dot"></span>
+        Live Monitoring
+      </div>
+    </div>
+
+    <div class="nav-actions">
+      <select class="select-dropdown" id="refreshIntervalSelect" onchange="AdminApp.setRefreshInterval(this.value)">
+        <option value="10000">⚡ Auto: 10s</option>
+        <option value="30000">⚡ Auto: 30s</option>
+        <option value="0">Manual Refresh</option>
+      </select>
+
+      <button class="btn btn-secondary" onclick="AdminApp.refreshAll()">
+        🔄 Refresh
+      </button>
+
+      <button class="btn btn-secondary" onclick="window.open('/', '_blank')">
+        📱 Open App ↗
+      </button>
+
+      <button class="btn btn-danger" onclick="AdminApp.logout()">
+        🚪 Log Out
+      </button>
+    </div>
+  </header>
+
+  <!-- ADMIN MAIN CONTENT -->
+  <main class="admin-container">
+    
+    <!-- 4 KPI OVERVIEW CARDS -->
+    <div class="kpi-grid">
+      
+      <!-- Card 1: Users Fleet -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">User Fleet</span>
+          <span class="kpi-icon">👥</span>
+        </div>
+        <div class="kpi-value" id="kpiTotalUsers">0</div>
+        <div class="kpi-subtext">
+          <span id="kpiRegisteredCount" style="color: var(--accent-blue); font-weight: 800;">0</span> Registered • 
+          <span id="kpiGuestCount" style="color: var(--text-muted);">0</span> Gym Guests
+        </div>
+      </div>
+
+      <!-- Card 2: Screen Time & Usage -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Total Screen Time</span>
+          <span class="kpi-icon">⏱️</span>
+        </div>
+        <div class="kpi-value" id="kpiTotalScreenTime">0m</div>
+        <div class="kpi-subtext">
+          Avg: <span id="kpiAvgScreenTime" style="color: var(--accent-emerald); font-weight: 800;">0m</span> / session • 
+          <span id="kpiTotalSessions">0</span> sessions
+        </div>
+      </div>
+
+      <!-- Card 3: Screen Sizes & Devices -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Top Screen Size</span>
+          <span class="kpi-icon">📱</span>
+        </div>
+        <div class="kpi-value" id="kpiTopScreenSize" style="font-size: 1.5rem; line-height: 2rem;">—</div>
+        <div class="kpi-subtext" id="kpiDeviceSummary">
+          Detecting mobile vs desktop fleet...
+        </div>
+      </div>
+
+      <!-- Card 4: Workouts & Actions -->
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Workouts & Operations</span>
+          <span class="kpi-icon">🏋️</span>
+        </div>
+        <div class="kpi-value" id="kpiTotalWorkouts">0</div>
+        <div class="kpi-subtext">
+          <span id="kpiTotalEvents" style="color: var(--accent-amber); font-weight: 800;">0</span> telemetry actions recorded
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TABS BAR -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tabStreamBtn" onclick="AdminApp.switchTab('stream')">
+        🔴 Live Activity Stream (<span id="tabCountActivities">0</span>)
+      </button>
+      <button class="tab-btn" id="tabUsersBtn" onclick="AdminApp.switchTab('users')">
+        👥 User Accounts Fleet (<span id="tabCountUsers">0</span>)
+      </button>
+      <button class="tab-btn" id="tabDevicesBtn" onclick="AdminApp.switchTab('devices')">
+        📐 Screen Resolutions & Fleet Analytics
+      </button>
+    </div>
+
+    <!-- TAB 1: LIVE ACTIVITY STREAM -->
+    <section id="sectionStream">
+      <div class="filter-bar">
+        <div class="search-box">
+          <span>🔍</span>
+          <input type="text" class="search-input" id="streamSearchInput" placeholder="Filter by user, action, exercise..." oninput="AdminApp.filterActivities()">
+        </div>
+
+        <div class="pill-filters">
+          <button class="filter-pill active" onclick="AdminApp.setCategoryFilter('all', this)">All Actions</button>
+          <button class="filter-pill" onclick="AdminApp.setCategoryFilter('workout', this)">🏋️ Workouts</button>
+          <button class="filter-pill" onclick="AdminApp.setCategoryFilter('navigation', this)">🧭 Navigation</button>
+          <button class="filter-pill" onclick="AdminApp.setCategoryFilter('auth', this)">👤 Auth & Sign In</button>
+          <button class="filter-pill" onclick="AdminApp.setCategoryFilter('interaction', this)">🔄 Interactions</button>
+        </div>
+
+        <button class="btn btn-danger" style="margin-left: auto;" onclick="AdminApp.purgeActivities()">
+          🗑️ Purge Logs
+        </button>
+      </div>
+
+      <div class="activity-list" id="activityStreamList">
+        <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+          ⌛ Connecting to telemetry stream...
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: USER FLEET DIRECTORY -->
+    <section id="sectionUsers" style="display: none;">
+      <div class="filter-bar">
+        <div class="search-box">
+          <span>🔍</span>
+          <input type="text" class="search-input" id="userSearchInput" placeholder="Search user by username..." oninput="AdminApp.filterUsers()">
+        </div>
+      </div>
+
+      <div class="data-table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Fitness Level</th>
+              <th>Streak</th>
+              <th>Weekly Goal</th>
+              <th>Workouts Done</th>
+              <th>Screen Time</th>
+              <th>Last Device</th>
+              <th>Last Screen Size</th>
+              <th>Last Active</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody">
+            <!-- Injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 3: SCREEN RESOLUTIONS & FLEET -->
+    <section id="sectionDevices" style="display: none;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
+        
+        <!-- Screen Resolutions Card -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 22px;">
+          <h3 style="font-size: 1rem; font-weight: 800; margin-bottom: 16px; color: #FFF; display: flex; align-items: center; gap: 8px;">
+            📱 Top Screen Resolutions
+          </h3>
+          <div id="screenResolutionsList" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+        <!-- Device Fleet Breakdown -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 22px;">
+          <h3 style="font-size: 1rem; font-weight: 800; margin-bottom: 16px; color: #FFF; display: flex; align-items: center; gap: 8px;">
+            💻 Device Fleet Breakdown
+          </h3>
+          <div id="deviceTypesList" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Injected dynamically -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- USER DETAIL DRILL-DOWN MODAL -->
+  <div class="modal-overlay" id="userDetailModal" onclick="if(event.target === this) AdminApp.closeDetailModal()">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 style="font-size: 1.1rem; font-weight: 900; margin: 0; display: flex; align-items: center; gap: 8px;" id="detailModalTitle">
+          👤 User Inspection
+        </h3>
+        <button onclick="AdminApp.closeDetailModal()" style="background: transparent; border: none; color: #FFF; font-size: 1.2rem; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" id="detailModalBody">
+        <!-- Injected dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN SCRIPT CONTROLLER -->
+  <script>
+    const AdminApp = {
+      token: null,
+      activeTab: 'stream',
+      activeCategory: 'all',
+      refreshTimer: null,
+      cachedActivities: [],
+      cachedUsers: [],
+
+      init() {
+        this.token = localStorage.getItem('hw_admin_token');
+        if (this.token) {
+          this.verifyToken();
+        } else {
+          this.showGate(true);
+        }
+      },
+
+      showGate(show) {
+        const gate = document.getElementById('adminGateModal');
+        if (gate) gate.style.display = show ? 'flex' : 'none';
+      },
+
+      async verifyToken() {
+        try {
+          const res = await fetch('/api/admin/verify', {
+            headers: { 'Authorization': `Bearer ${this.token}` }
+          });
+          if (res.ok) {
+            this.showGate(false);
+            this.startAutoRefresh();
+            this.refreshAll();
+          } else {
+            localStorage.removeItem('hw_admin_token');
+            this.showGate(true);
+          }
+        } catch (e) {
+          this.showGate(true);
+        }
+      },
+
+      async login() {
+        const userEl = document.getElementById('adminUserField');
+        const passEl = document.getElementById('adminPassField');
+        const alertEl = document.getElementById('gateAlert');
+        const username = userEl.value.trim();
+        const password = passEl.value.trim();
+
+        if (!username || !password) {
+          alertEl.textContent = 'Please enter both admin username and password.';
+          alertEl.style.display = 'block';
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          if (res.ok && data.admin_token) {
+            this.token = data.admin_token;
+            localStorage.setItem('hw_admin_token', this.token);
+            this.showGate(false);
+            this.startAutoRefresh();
+            this.refreshAll();
+          } else {
+            alertEl.textContent = data.detail || 'Access denied: Invalid credentials or not an admin.';
+            alertEl.style.display = 'block';
+          }
+        } catch (e) {
+          alertEl.textContent = 'Connection error: ' + e.message;
+          alertEl.style.display = 'block';
+        }
+      },
+
+      logout() {
+        localStorage.removeItem('hw_admin_token');
+        this.token = null;
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
+        this.showGate(true);
+      },
+
+      startAutoRefresh(intervalMs = 10000) {
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
+        if (intervalMs > 0) {
+          this.refreshTimer = setInterval(() => this.refreshAll(), intervalMs);
+        }
+      },
+
+      setRefreshInterval(val) {
+        const ms = parseInt(val, 10);
+        this.startAutoRefresh(ms);
+      },
+
+      async refreshAll() {
+        if (!this.token) return;
+        await Promise.all([
+          this.fetchStats(),
+          this.fetchActivities(),
+          this.fetchUsers()
+        ]);
+      },
+
+      formatSeconds(sec) {
+        if (!sec || sec <= 0) return '0s';
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        if (m === 0) return `${s}s`;
+        if (m >= 60) {
+          const h = Math.floor(m / 60);
+          const remM = m % 60;
+          return `${h}h ${remM}m`;
+        }
+        return `${m}m ${s}s`;
+      },
+
+      async fetchStats() {
+        try {
+          const res = await fetch('/api/admin/stats', {
+            headers: { 'Authorization': `Bearer ${this.token}` }
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+
+          document.getElementById('kpiTotalUsers').textContent = data.total_users || 0;
+          document.getElementById('kpiRegisteredCount').textContent = data.registered_users || 0;
+          document.getElementById('kpiGuestCount').textContent = data.guest_users || 0;
+
+          document.getElementById('kpiTotalScreenTime').textContent = this.formatSeconds(data.total_screen_time_seconds);
+          document.getElementById('kpiAvgScreenTime').textContent = this.formatSeconds(Math.round(data.avg_screen_time_seconds));
+          document.getElementById('kpiTotalSessions').textContent = data.total_sessions || 0;
+
+          document.getElementById('kpiTotalWorkouts').textContent = data.total_workouts || 0;
+          document.getElementById('kpiTotalEvents').textContent = data.total_events || 0;
+
+          // Top Screen Resolution
+          if (data.screen_resolutions && data.screen_resolutions.length > 0) {
+            const top = data.screen_resolutions[0];
+            document.getElementById('kpiTopScreenSize').textContent = top.screen_resolution;
+            document.getElementById('kpiDeviceSummary').textContent = `${top.count} sessions on this resolution`;
+          } else {
+            document.getElementById('kpiTopScreenSize').textContent = '—';
+            document.getElementById('kpiDeviceSummary').textContent = 'Waiting for telemetry...';
+          }
+
+          this.renderDevicesTab(data.screen_resolutions || [], data.device_types || []);
+        } catch (e) {
+          console.warn('Failed to fetch stats:', e);
+        }
+      },
+
+      renderDevicesTab(screens, devices) {
+        const screensEl = document.getElementById('screenResolutionsList');
+        if (screensEl) {
+          if (screens.length === 0) {
+            screensEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem;">No screen resolution records yet.</div>';
+          } else {
+            screensEl.innerHTML = screens.map(s => `
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">📐 ${s.screen_resolution}</span>
+                <span style="background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;">
+                  ${s.count} sessions
+                </span>
+              </div>
+            `).join('');
+          }
+        }
+
+        const devicesEl = document.getElementById('deviceTypesList');
+        if (devicesEl) {
+          if (devices.length === 0) {
+            devicesEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.82rem;">No device fleet records yet.</div>';
+          } else {
+            devicesEl.innerHTML = devices.map(d => `
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">💻 ${d.device_type}</span>
+                <span style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;">
+                  ${d.count} sessions
+                </span>
+              </div>
+            `).join('');
+          }
+        }
+      },
+
+      async fetchActivities() {
+        try {
+          const res = await fetch(`/api/admin/activities?limit=150&category=${this.activeCategory}`, {
+            headers: { 'Authorization': `Bearer ${this.token}` }
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          this.cachedActivities = data.activities || [];
+          document.getElementById('tabCountActivities').textContent = this.cachedActivities.length;
+          this.renderActivities(this.cachedActivities);
+        } catch (e) {
+          console.warn('Failed to fetch activities:', e);
+        }
+      },
+
+      renderActivities(list) {
+        const container = document.getElementById('activityStreamList');
+        if (!container) return;
+
+        if (list.length === 0) {
+          container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: var(--text-muted); background: var(--bg-card); border-radius: var(--radius-sm);">
+              No activity events match your filter.
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = list.map(a => {
+          let badgeClass = 'type-interaction';
+          let icon = '⚡';
+          if (a.event_category === 'workout') { badgeClass = 'type-workout'; icon = '🏋️'; }
+          else if (a.event_category === 'auth') { badgeClass = 'type-auth'; icon = '👤'; }
+          else if (a.event_category === 'navigation') { badgeClass = 'type-nav'; icon = '🧭'; }
+
+          const timeStr = a.created_at ? new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+          const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString() : '';
+
+          let detailText = '';
+          if (a.details) {
+            if (a.details.workoutTitle) detailText = `Workout: "${a.details.workoutTitle}" (${a.details.muscle || 'Full Body'})`;
+            else if (a.details.screen) detailText = `Viewed screen: ${a.details.screen}`;
+            else if (a.details.action) detailText = `Action: ${a.details.action} (${a.details.username || ''})`;
+            else if (a.details.query) detailText = `Search query: "${a.details.query}"`;
+            else if (a.details.replacementName) detailText = `Swapped "${a.details.originalName}" ➔ "${a.details.replacementName}"`;
+            else detailText = JSON.stringify(a.details);
+          }
+
+          const screenRes = (a.screen_width && a.screen_height) ? `${a.screen_width}x${a.screen_height}` : '';
+
+          return `
+            <div class="activity-card">
+              <div class="act-left">
+                <span class="act-type-badge ${badgeClass}">${icon} ${a.event_type}</span>
+                <div>
+                  <div class="act-user-tag">
+                    ${a.username ? `@${a.username}` : '<span style="color: var(--text-muted);">@anonymous_guest</span>'}
+                  </div>
+                  <div class="act-details" title="${detailText}">${detailText}</div>
+                </div>
+              </div>
+              <div class="act-right">
+                ${screenRes ? `<span class="act-device-pill">📐 ${screenRes}</span>` : ''}
+                ${a.device_type ? `<span class="act-device-pill">${a.device_type}</span>` : ''}
+                <span>${dateStr} ${timeStr}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      },
+
+      filterActivities() {
+        const query = document.getElementById('streamSearchInput').value.toLowerCase();
+        if (!query) {
+          this.renderActivities(this.cachedActivities);
+          return;
+        }
+        const filtered = this.cachedActivities.filter(a => {
+          const user = (a.username || '').toLowerCase();
+          const type = (a.event_type || '').toLowerCase();
+          const det = JSON.stringify(a.details || {}).toLowerCase();
+          return user.includes(query) || type.includes(query) || det.includes(query);
+        });
+        this.renderActivities(filtered);
+      },
+
+      setCategoryFilter(cat, btn) {
+        this.activeCategory = cat;
+        document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        this.fetchActivities();
+      },
+
+      async fetchUsers() {
+        try {
+          const res = await fetch('/api/admin/users', {
+            headers: { 'Authorization': `Bearer ${this.token}` }
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+          this.cachedUsers = data.users || [];
+          document.getElementById('tabCountUsers').textContent = this.cachedUsers.length;
+          this.renderUsers(this.cachedUsers);
+        } catch (e) {
+          console.warn('Failed to fetch users:', e);
+        }
+      },
+
+      renderUsers(usersList) {
+        const tbody = document.getElementById('userTableBody');
+        if (!tbody) return;
+
+        if (usersList.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">No users found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = usersList.map(u => {
+          const isGuest = u.username.startsWith('gym_user_');
+          const lastActiveStr = u.last_activity_at ? new Date(u.last_activity_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—';
+          return `
+            <tr>
+              <td>
+                <div style="font-weight: 800; color: #FFF; display: flex; align-items: center; gap: 6px;">
+                  ${u.username}
+                  ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
+                  ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">1-TAP GUEST</span>' : ''}
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${u.id}</div>
+              </td>
+              <td><span style="font-weight: 700;">${u.fitness_level || 'Intermediate'}</span></td>
+              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${u.streak_count || 0}</span></td>
+              <td>${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5}</td>
+              <td><strong style="color: var(--accent-blue);">${u.workout_count || 0}</strong></td>
+              <td><span style="font-weight: 700; color: var(--accent-emerald);">${this.formatSeconds(u.total_screen_time_seconds)}</span></td>
+              <td><span class="act-device-pill">${u.last_device_type || '—'}</span></td>
+              <td><span class="act-device-pill" style="color: var(--accent-blue);">${u.last_screen_resolution || '—'}</span></td>
+              <td style="font-size: 0.75rem; color: var(--text-muted);">${lastActiveStr}</td>
+              <td>
+                <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.72rem;" onclick="AdminApp.inspectUser(${u.id})">
+                  🔍 Inspect
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      },
+
+      filterUsers() {
+        const query = document.getElementById('userSearchInput').value.toLowerCase();
+        if (!query) {
+          this.renderUsers(this.cachedUsers);
+          return;
+        }
+        const filtered = this.cachedUsers.filter(u => u.username.toLowerCase().includes(query));
+        this.renderUsers(filtered);
+      },
+
+      async inspectUser(userId) {
+        try {
+          const res = await fetch(`/api/admin/user/${userId}/detail`, {
+            headers: { 'Authorization': `Bearer ${this.token}` }
+          });
+          if (!res.ok) return;
+          const data = await res.json();
+
+          const modal = document.getElementById('userDetailModal');
+          const title = document.getElementById('detailModalTitle');
+          const body = document.getElementById('detailModalBody');
+
+          title.innerHTML = `👤 Inspecting Athlete: <strong>@${data.user.username}</strong> (ID #${data.user.id})`;
+
+          body.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Streak</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-amber);">🔥 ${data.user.streak_count} Days</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Fitness Level</div>
+                <div style="font-size: 1.2rem; font-weight: 800; color: #FFF;">${data.user.fitness_level}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-blue);">${data.user.weekly_completed_count}/${data.user.weekly_goal_target}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Total Workouts</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-emerald);">${data.workouts.length}</div>
+              </div>
+            </div>
+
+            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF;">🏋️ Completed Workout Sessions (${data.workouts.length})</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
+              ${data.workouts.length === 0 ? '<div style="color: var(--text-muted); font-size: 0.8rem;">No workouts completed yet.</div>' : data.workouts.map(w => `
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <strong style="color: #FFF; font-size: 0.88rem;">${w.workout_title}</strong>
+                    <div style="font-size: 0.72rem; color: var(--text-muted);">${w.completed_at} • ${w.duration_minutes} min • ${w.calories_burned} kcal</div>
+                  </div>
+                  <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 2px 8px; border-radius: 4px;">
+                    ${(w.exercises || []).length} Exercises
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+
+            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF;">⚡ User Action Trace (${data.activities.length} Actions)</h4>
+            <div style="display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto;">
+              ${data.activities.length === 0 ? '<div style="color: var(--text-muted); font-size: 0.8rem;">No actions recorded yet.</div>' : data.activities.map(a => `
+                <div style="font-size: 0.75rem; background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color); display: flex; justify-content: space-between;">
+                  <span><strong>${a.event_type}</strong>: ${JSON.stringify(a.details)}</span>
+                  <span style="color: var(--text-muted);">${a.created_at}</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+
+          if (modal) modal.classList.add('active');
+        } catch (e) {
+          alert('Failed to load user details: ' + e.message);
+        }
+      },
+
+      closeDetailModal() {
+        const modal = document.getElementById('userDetailModal');
+        if (modal) modal.classList.remove('active');
+      },
+
+      switchTab(tab) {
+        this.activeTab = tab;
+        document.getElementById('tabStreamBtn').classList.toggle('active', tab === 'stream');
+        document.getElementById('tabUsersBtn').classList.toggle('active', tab === 'users');
+        document.getElementById('tabDevicesBtn').classList.toggle('active', tab === 'devices');
+
+        document.getElementById('sectionStream').style.display = tab === 'stream' ? 'block' : 'none';
+        document.getElementById('sectionUsers').style.display = tab === 'users' ? 'block' : 'none';
+        document.getElementById('sectionDevices').style.display = tab === 'devices' ? 'block' : 'none';
+      },
+
+      async purgeActivities() {
+        if (!confirm('Are you sure you want to purge all telemetry activity events? (User accounts and workouts will NOT be deleted).')) {
+          return;
+        }
+        try {
+          const res = await fetch('/api/admin/activities', {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${this.token}` }
+          });
+          if (res.ok) {
+            alert('Activity logs purged successfully.');
+            this.refreshAll();
+          }
+        } catch (e) {
+          alert('Purge failed: ' + e.message);
+        }
+      }
+    };
+
+    // Auto-initialize on page load
+    window.addEventListener('DOMContentLoaded', () => AdminApp.init());
+  </script>
+</body>
+</html>

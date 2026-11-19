@@ -531,10 +531,22 @@ const HomeWorkoutApp = {
       return;
     }
 
+    const oldEx = this.currentDailyRoutine.exercises[this.swapTargetIndex];
+
     // Replace in current daily routine
     this.currentDailyRoutine.exercises[this.swapTargetIndex] = replacement;
     this.closeSwapModal();
     this.renderBodyFocus();
+
+    if (typeof TelemetryTracker !== 'undefined' && oldEx) {
+      TelemetryTracker.trackExerciseSwap(
+        oldEx.id,
+        oldEx.name,
+        replacement.id,
+        replacement.name,
+        this.activeBodyFocus
+      );
+    }
   },
 
   quickRandomSwapCurrent() {
@@ -574,6 +586,15 @@ const HomeWorkoutApp = {
     const modal = document.getElementById('workoutRunnerModal');
     if (modal) modal.classList.add('active');
     this.loadCurrentExercise();
+
+    if (typeof TelemetryTracker !== 'undefined' && this.activeWorkout) {
+      TelemetryTracker.trackWorkoutStart(
+        this.activeWorkout.id,
+        this.activeWorkout.title,
+        this.activeWorkout.muscle,
+        this.activeWorkout.exercises ? this.activeWorkout.exercises.length : 5
+      );
+    }
   },
 
   // ========================================================
@@ -1149,6 +1170,16 @@ const HomeWorkoutApp = {
     this.renderBodyFocus({ forceRefresh: true });
 
     const workoutTitle = result && result.log ? result.log.challengeTitle : (this.activeWorkout.title || 'WORKOUT');
+    if (typeof TelemetryTracker !== 'undefined' && this.activeWorkout) {
+      TelemetryTracker.trackWorkoutComplete(
+        this.activeWorkout.id,
+        workoutTitle,
+        18,
+        145,
+        this.activeWorkout.exercises ? this.activeWorkout.exercises.length : 1
+      );
+    }
+
     if (isDaily) {
       const mName = this.activeWorkout.muscle.toUpperCase();
       alert(`🎉 ${mName} ROUTINE COMPLETED!\n\nAwesome work! All 5 exercises finished.\n• Logged: ${workoutTitle}\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥\n\n✨ Rotation Saved: Next time you do ${mName}, 5 fresh, unrepeated exercises will be recommended!`);
@@ -1293,6 +1324,10 @@ const HomeWorkoutApp = {
       if (set) set.classList.add('active');
       this.currentScreen = 'settings';
       this.renderSettingsScreen();
+    }
+
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen(this.currentScreen, tabId);
     }
 
     const scrollContainer = document.querySelector('.hw-main-scroll');
@@ -1469,9 +1504,13 @@ const HomeWorkoutApp = {
       if (formView) formView.style.display = 'none';
       if (usernameEl) usernameEl.textContent = user.username;
       if (avatarEl) avatarEl.textContent = (user.username[0] || 'A').toUpperCase();
+      const adminBtn = document.getElementById('authAdminPortalBtn');
+      if (adminBtn) adminBtn.style.display = (user.is_admin || user.username === 'admin') ? 'block' : 'none';
     } else {
       if (loggedInView) loggedInView.style.display = 'none';
       if (formView) formView.style.display = 'block';
+      const adminBtn = document.getElementById('authAdminPortalBtn');
+      if (adminBtn) adminBtn.style.display = 'none';
       this.switchAuthMode('login');
     }
 
@@ -1510,6 +1549,9 @@ const HomeWorkoutApp = {
       } else {
         await HomeWorkoutStore.register(u, p, this.activeFocusLevel);
       }
+      if (typeof TelemetryTracker !== 'undefined') {
+        TelemetryTracker.trackAuth(this.authMode, u);
+      }
       this.closeAuthModal();
       this.renderHeader();
       this.renderWeeklyGoalCard();
@@ -1523,6 +1565,9 @@ const HomeWorkoutApp = {
   async handle1TapGuestLogin() {
     try {
       const data = await HomeWorkoutStore.guestLogin();
+      if (typeof TelemetryTracker !== 'undefined') {
+        TelemetryTracker.trackAuth('guest_login', data.user.username);
+      }
       this.closeAuthModal();
       this.renderHeader();
       this.renderWeeklyGoalCard();
@@ -1534,7 +1579,11 @@ const HomeWorkoutApp = {
   },
 
   handleLogout() {
+    const user = HomeWorkoutStore.getUser();
     if (confirm('Log out of this device?')) {
+      if (typeof TelemetryTracker !== 'undefined' && user) {
+        TelemetryTracker.trackAuth('logout', user.username);
+      }
       HomeWorkoutStore.logout();
       this.closeAuthModal();
       this.renderHeader();
@@ -1567,6 +1616,16 @@ const HomeWorkoutApp = {
           </div>
           <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()">
             ${user.isPro ? 'MANAGE' : 'UPGRADE ↗'}
+          </button>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
+          <div>
+            <h4 style="font-weight: 800; font-size: 1rem;">🛡️ Admin Command Center</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Real-time user monitoring & analytics</span>
+          </div>
+          <button class="level-select-pill" style="background: #0F172A; color: #38BDF8; border: 1px solid #38BDF8;" onclick="window.open('/admin.html', '_blank')">
+            Portal ↗
           </button>
         </div>
 
