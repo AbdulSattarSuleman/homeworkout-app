@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automated Auth & Storage Test Suite</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0F172A;
+      color: #F8FAFC;
+      padding: 30px 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; color: #38BDF8; }
+    p { font-size: 0.85rem; color: #94A3B8; margin-bottom: 24px; }
+    .test-card {
+      background: #1E293B;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .test-name { font-weight: 700; font-size: 0.95rem; }
+    .test-desc { font-size: 0.75rem; color: #94A3B8; margin-top: 2px; }
+    .badge {
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-pending { background: #334155; color: #94A3B8; }
+    .badge-pass { background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge-fail { background: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+    #summaryCard {
+      background: #0284C7;
+      color: #FFF;
+      padding: 16px 20px;
+      border-radius: 12px;
+      font-weight: 800;
+      margin-top: 24px;
+      display: none;
+    }
+    button {
+      background: #38BDF8;
+      color: #0F172A;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 800;
+      cursor: pointer;
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+    button:hover { background: #7DD3FC; }
+  </style>
+</head>
+<body>
+
+  <h1>🧪 Automated Auth Verification Suite</h1>
+  <p>Verifies Priority 0 Auth Requirements: Registration, Login, Validations, Duplicate User, Hashing, Guest Mode & Session Persistence.</p>
+
+  <button onclick="runAllTests()">▶ Run Test Suite</button>
+
+  <div id="testContainer"></div>
+  <div id="summaryCard"></div>
+
+  <!-- Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="../js/exercises.js"></script>
+  <script src="../js/store.js"></script>
+
+  <script>
+    const testCases = [
+      {
+        id: 'test_short_user',
+        name: 'Validation: Short Username',
+        desc: 'Rejects username with less than 3 characters',
+        fn: async () => {
+          try {
+            await HomeWorkoutStore.register('ab', 'password123');
+            throw new Error('Expected validation error but passed');
+          } catch (e) {
+            if (e.message.includes('at least 3 characters')) return true;
+            throw e;
+          }
+        }
+      },
+      {
+        id: 'test_short_pass',
+        name: 'Validation: Short Password',
+        desc: 'Enforces minimum 8 characters for password',
+        fn: async () => {
+          try {
+            await HomeWorkoutStore.register('test_user_valid', '12345');
+            throw new Error('Expected validation error but passed');
+          } catch (e) {
+            if (e.message.includes('at least 8 characters')) return true;
+            throw e;
+          }
+        }
+      },
+      {
+        id: 'test_register_success',
+        name: 'Registration: Valid Account',
+        desc: 'Registers new user, securely hashes password, sets session token',
+        fn: async () => {
+          const testUser = 'athlete_' + Date.now();
+          const res = await HomeWorkoutStore.register(testUser, 'ironcladPass2026!');
+          if (!res || !res.token) throw new Error('Missing token in response');
+          if (HomeWorkoutStore.getUser().username !== testUser) throw new Error('User not saved in state');
+          
+          // Verify password hash in vault is NOT plain text
+          const vault = HomeWorkoutStore.getAccountsVault();
+          const entry = vault[testUser.toLowerCase()];
+          if (!entry || entry.passwordHash === 'ironcladPass2026!') throw new Error('Password stored in plain text!');
+          return true;
+        }
+      },
+      {
+        id: 'test_duplicate_username',
+        name: 'Validation: Duplicate Username',
+        desc: 'Prevents registering existing username with specific message',
+        fn: async () => {
+          const existingUser = 'duplicate_runner';
+          await HomeWorkoutStore.register(existingUser, 'firstPass1234');
+          try {
+            await HomeWorkoutStore.register(existingUser, 'secondPass1234');
+            throw new Error('Expected duplicate error but passed');
+          } catch (e) {
+            if (e.message.includes('Username already taken')) return true;
+            throw e;
+          }
+        }
+      },
+      {
+        id: 'test_login_success',
+        name: 'Login: Valid Credentials',
+        desc: 'Authenticates registered user and issues valid session',
+        fn: async () => {
+          const user = 'runner_login_' + Date.now();
+          const pass = 'correctPassword123';
+          await HomeWorkoutStore.register(user, pass);
+          HomeWorkoutStore.logout();
+
+          const loginRes = await HomeWorkoutStore.login(user, pass);
+          if (!loginRes || !loginRes.token) throw new Error('Login failed to return token');
+          if (HomeWorkoutStore.getUser().username !== user) throw new Error('Active user mismatch');
+          return true;
+        }
+      },
+      {
+        id: 'test_login_wrong_pass',
+        name: 'Login: Incorrect Password',
+        desc: 'Rejects wrong password with specific inline error message',
+        fn: async () => {
+          const user = 'runner_pass_test';
+          await HomeWorkoutStore.register(user, 'realPassword123');
+          HomeWorkoutStore.logout();
+
+          try {
+            await HomeWorkoutStore.login(user, 'totallyWrongPassword123');
+            throw new Error('Expected incorrect password error but passed');
+          } catch (e) {
+            if (e.message.includes('Incorrect password')) return true;
+            throw e;
+          }
+        }
+      },
+      {
+        id: 'test_login_unknown_user',
+        name: 'Login: Unknown User',
+        desc: 'Rejects un-registered user with helpful guidance',
+        fn: async () => {
+          try {
+            await HomeWorkoutStore.login('ghost_user_' + Date.now(), 'somePassword123');
+            throw new Error('Expected unknown user error but passed');
+          } catch (e) {
+            if (e.message.includes('Username not found')) return true;
+            throw e;
+          }
+        }
+      },
+      {
+        id: 'test_guest_mode',
+        name: 'Auth: Frictionless Guest Mode',
+        desc: 'Allows immediate workout training without account or network block',
+        fn: async () => {
+          HomeWorkoutStore.logout();
+          const guestRes = await HomeWorkoutStore.guestLogin();
+          if (!guestRes || !guestRes.token) throw new Error('Missing guest token');
+          if (!HomeWorkoutStore.getUser().isGuest) throw new Error('User not flagged as guest');
+          return true;
+        }
+      },
+      {
+        id: 'test_session_persistence',
+        name: 'Session: Persistence & Reload',
+        desc: 'Preserves active session token and state across reloads',
+        fn: async () => {
+          const u = 'persistent_hero';
+          await HomeWorkoutStore.register(u, 'ironclad2026!');
+          const tokenBefore = HomeWorkoutStore.getToken();
+
+          // Simulate page reload
+          const restoredUser = await HomeWorkoutStore.syncSession();
+          const tokenAfter = HomeWorkoutStore.getToken();
+
+          if (!tokenAfter || tokenAfter !== tokenBefore) throw new Error('Token lost across reload');
+          if (restoredUser.username !== u) throw new Error('Username mismatch after reload');
+          return true;
+        }
+      },
+      {
+        id: 'test_logout',
+        name: 'Auth: Logout Cleanup',
+        desc: 'Clears active token and resets athlete session',
+        fn: async () => {
+          await HomeWorkoutStore.register('logout_test_user', 'password999');
+          HomeWorkoutStore.logout();
+          if (HomeWorkoutStore.getToken() !== null) throw new Error('Token was not cleared on logout');
+          if (HomeWorkoutStore.getUser().username !== null) throw new Error('Username was not cleared');
+          return true;
+        }
+      }
+    ];
+
+    function renderTestList() {
+      const container = document.getElementById('testContainer');
+      container.innerHTML = testCases.map(t => `
+        <div class="test-card" id="card_${t.id}">
+          <div>
+            <div class="test-name">${t.name}</div>
+            <div class="test-desc">${t.desc}</div>
+          </div>
+          <span class="badge badge-pending" id="badge_${t.id}">Pending</span>
+        </div>
+      `).join('');
+    }
+
+    async function runAllTests() {
+      let passed = 0;
+      let failed = 0;
+
+      for (const t of testCases) {
+        const badge = document.getElementById(`badge_${t.id}`);
+        try {
+          badge.className = 'badge badge-pending';
+          badge.textContent = 'Running...';
+          await t.fn();
+          badge.className = 'badge badge-pass';
+          badge.textContent = 'PASS ✓';
+          passed++;
+        } catch (err) {
+          badge.className = 'badge badge-fail';
+          badge.textContent = 'FAIL ✗';
+          badge.title = err.message;
+          console.error(`[Test Failed: ${t.name}]`, err);
+          failed++;
+        }
+      }
+
+      const summary = document.getElementById('summaryCard');
+      summary.style.display = 'block';
+      if (failed === 0) {
+        summary.style.background = '#059669';
+        summary.innerHTML = `🎉 All ${passed} Auth Tests Passed Successfully! Priority 0 Verified.`;
+      } else {
+        summary.style.background = '#DC2626';
+        summary.innerHTML = `⚠️ ${failed} test(s) failed out of ${passed + failed}. Check console logs.`;
+      }
+    }
+
+    // Auto-run on load
+    window.addEventListener('DOMContentLoaded', () => {
+      renderTestList();
+      runAllTests();
+    });
+  </script>
+</body>
+</html>

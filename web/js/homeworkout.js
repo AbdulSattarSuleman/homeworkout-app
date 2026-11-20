@@ -1604,8 +1604,39 @@ const HomeWorkoutApp = {
     if (modal) modal.classList.remove('active');
   },
 
+  showAuthFeedback(message, type = 'error') {
+    const box = document.getElementById('authInlineFeedback');
+    if (!box) return;
+    box.style.display = 'block';
+    if (type === 'error') {
+      box.style.background = '#FEE2E2';
+      box.style.border = '1px solid #FCA5A5';
+      box.style.color = '#B91C1C';
+      box.innerHTML = `⚠️ ${message}`;
+    } else if (type === 'success') {
+      box.style.background = '#ECFDF5';
+      box.style.border = '1px solid #6EE7B7';
+      box.style.color = '#047857';
+      box.innerHTML = `✅ ${message}`;
+    } else {
+      box.style.background = '#EFF6FF';
+      box.style.border = '1px solid #BFDBFE';
+      box.style.color = '#1D4ED8';
+      box.innerHTML = `ℹ️ ${message}`;
+    }
+  },
+
+  clearAuthFeedback() {
+    const box = document.getElementById('authInlineFeedback');
+    if (box) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    }
+  },
+
   switchAuthMode(mode) {
     this.authMode = mode;
+    this.clearAuthFeedback();
     const loginBtn = document.getElementById('authTabLoginBtn');
     const regBtn = document.getElementById('authTabRegisterBtn');
     const submitBtn = document.getElementById('authSubmitBtn');
@@ -1615,48 +1646,66 @@ const HomeWorkoutApp = {
   },
 
   async submitAuthForm() {
+    this.clearAuthFeedback();
     const usernameInput = document.getElementById('authUsernameInput');
     const passwordInput = document.getElementById('authPasswordInput');
     const u = usernameInput ? usernameInput.value.trim() : '';
     const p = passwordInput ? passwordInput.value.trim() : '';
 
-    if (!u || !p) {
-      alert('Please enter both username and password.');
-      return;
+    const submitBtn = document.getElementById('authSubmitBtn');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.7';
     }
 
     try {
       if (this.authMode === 'login') {
         await HomeWorkoutStore.login(u, p);
+        this.showAuthFeedback(`Welcome back, ${u}! Signed in successfully.`, 'success');
       } else {
-        await HomeWorkoutStore.register(u, p, this.activeFocusLevel);
+        await HomeWorkoutStore.register(u, p, this.activeFocusLevel || 'Intermediate');
+        this.showAuthFeedback(`Account created successfully! Welcome, ${u}!`, 'success');
       }
+
       if (typeof TelemetryTracker !== 'undefined') {
         TelemetryTracker.trackAuth(this.authMode, u);
       }
-      this.closeAuthModal();
-      this.renderHeader();
-      this.renderWeeklyGoalCard();
-      this.renderBodyFocus();
-      alert(`🎉 Welcome ${u}! Your workout sessions and streaks are now connected and syncing across your phone and gym.`);
+
+      setTimeout(() => {
+        this.closeAuthModal();
+        this.renderHeader();
+        this.renderWeeklyGoalCard();
+        this.renderBodyFocus();
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.style.opacity = '1';
+        }
+      }, 700);
     } catch (err) {
-      alert(err.message || 'Authentication error.');
+      this.showAuthFeedback(err.message || 'Authentication error. Please check your details.', 'error');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+      }
     }
   },
 
   async handle1TapGuestLogin() {
+    this.clearAuthFeedback();
     try {
       const data = await HomeWorkoutStore.guestLogin();
       if (typeof TelemetryTracker !== 'undefined') {
         TelemetryTracker.trackAuth('guest_login', data.user.username);
       }
-      this.closeAuthModal();
-      this.renderHeader();
-      this.renderWeeklyGoalCard();
-      this.renderBodyFocus();
-      alert(`⚡ 1-Tap Gym Session Connected as "${data.user.username}"! Ready to train.`);
+      this.showAuthFeedback(`⚡ Guest session ready as "${data.user.username}". Starting session...`, 'success');
+      setTimeout(() => {
+        this.closeAuthModal();
+        this.renderHeader();
+        this.renderWeeklyGoalCard();
+        this.renderBodyFocus();
+      }, 500);
     } catch (err) {
-      alert('Could not start 1-tap gym session: ' + err.message);
+      this.showAuthFeedback('Could not start guest session: ' + err.message, 'error');
     }
   },
 

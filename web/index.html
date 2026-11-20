@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=2.4">
+  <link rel="stylesheet" href="css/homeworkout.css?v=2.5">
 </head>
 <body>
 
@@ -465,6 +465,8 @@
 
       <!-- If Not Logged In View -->
       <div id="authFormView">
+        <div id="authInlineFeedback" style="display: none; padding: 10px 14px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; margin-bottom: 12px; line-height: 1.4;"></div>
+
         <div class="mode-tab-switcher" style="margin-bottom: 14px;">
           <button class="mode-tab-btn active" id="authTabLoginBtn" onclick="HomeWorkoutApp.switchAuthMode('login')">
             Sign In
@@ -476,12 +478,13 @@
 
         <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
           <div>
-            <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Username</label>
-            <input type="text" id="authUsernameInput" class="hw-search-input" placeholder="e.g. gym_athlete" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;">
+            <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Username or Email</label>
+            <input type="text" id="authUsernameInput" class="hw-search-input" placeholder="e.g. gym_athlete or you@example.com" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;" onkeydown="if(event.key === 'Enter') HomeWorkoutApp.submitAuthForm()">
           </div>
           <div>
             <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Password</label>
-            <input type="password" id="authPasswordInput" class="hw-search-input" placeholder="••••••••" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;">
+            <input type="password" id="authPasswordInput" class="hw-search-input" placeholder="••••••••" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;" onkeydown="if(event.key === 'Enter') HomeWorkoutApp.submitAuthForm()">
+            <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px;" id="authPasswordHint">Minimum 8 characters</span>
           </div>
         </div>
 
@@ -492,17 +495,20 @@
         <div style="text-align: center; margin: 6px 0; color: var(--text-muted); font-size: 0.75rem; font-weight: 700;">— OR —</div>
 
         <button class="start-day-pill-btn" style="background: #F3F4F6; color: var(--text-main); border: 1px solid #E5E7EB;" onclick="HomeWorkoutApp.handle1TapGuestLogin()">
-          ⚡ Quick Gym Sign In (1-Tap, No Password)
+          ⚡ Continue as Guest (Train Offline, No Account Needed)
         </button>
       </div>
     </div>
   </div>
 
+  <!-- Supabase Cloud SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- Application Logic Scripts -->
-  <script src="js/exercises.js?v=2.4"></script>
-  <script src="js/store.js?v=2.4"></script>
-  <script src="js/visuals.js?v=2.4"></script>
-  <script src="js/telemetry.js?v=2.4"></script>
-  <script src="js/homeworkout.js?v=2.4"></script>
+  <script src="js/exercises.js?v=2.5"></script>
+  <script src="js/store.js?v=2.5"></script>
+  <script src="js/visuals.js?v=2.5"></script>
+  <script src="js/telemetry.js?v=2.5"></script>
+  <script src="js/homeworkout.js?v=2.5"></script>
 </body>
 </html>
