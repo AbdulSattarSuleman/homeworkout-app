@@ -174,7 +174,7 @@
             await HomeWorkoutStore.login(user, 'totallyWrongPassword123');
             throw new Error('Expected incorrect password error but passed');
           } catch (e) {
-            if (e.message.includes('Incorrect password')) return true;
+            if (e.message.includes('Incorrect password') || e.message.includes('password was incorrect') || e.message.includes('Invalid login')) return true;
             throw e;
           }
         }
@@ -188,7 +188,7 @@
             await HomeWorkoutStore.login('ghost_user_' + Date.now(), 'somePassword123');
             throw new Error('Expected unknown user error but passed');
           } catch (e) {
-            if (e.message.includes('Username not found')) return true;
+            if (e.message.includes('Username not found') || e.message.includes('No account found') || e.message.includes('Invalid login')) return true;
             throw e;
           }
         }

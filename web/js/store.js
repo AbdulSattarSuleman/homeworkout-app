@@ -178,19 +178,28 @@ const HomeWorkoutStore = {
     if (client) {
       try {
         const email = this.formatAuthEmail(cleanUser);
-        await client.auth.signUp({
+        const { data: supaData } = await client.auth.signUp({
           email: email,
           password: cleanPass,
           options: {
             data: { username: cleanUser, fitness_level: fitnessLevel }
           }
         });
+        if (supaData) {
+          if (supaData.session && supaData.session.access_token) {
+            this.setToken(supaData.session.access_token);
+          }
+          if (supaData.user) {
+            user.id = supaData.user.id;
+            this.saveUser(user);
+          }
+        }
       } catch (err) {
         console.warn('[Supabase] Background sign up notice:', err.message);
       }
     }
 
-    return { status: 'success', user, token };
+    return { status: 'success', user, token: this.getToken() || token };
   },
 
   formatAuthEmail(cleanUser) {
@@ -226,9 +235,16 @@ const HomeWorkoutStore = {
           user.name = cleanUser;
           user.isGuest = false;
           this.saveUser(user);
+          // Sync profile & workout logs from Supabase cloud
+          await this.syncFromCloud();
           return { status: 'success', user, token };
+        } else if (error) {
+          throw new Error('No account found with this username or password was incorrect. Please check your credentials or create an account.');
         }
       } catch (e) {
+        if (e.message.includes('No account found') || e.message.includes('credentials') || e.message.includes('password')) {
+          throw e;
+        }
         console.warn('[Supabase] Cloud login attempt notice:', e);
       }
     }
@@ -323,21 +339,163 @@ const HomeWorkoutStore = {
     return true;
   },
 
+  calculateStreak(logs = null) {
+    try {
+      const workoutLogs = logs || this.getWorkoutLogs();
+      if (!workoutLogs || workoutLogs.length === 0) return 0;
+
+      const dateSet = new Set();
+      workoutLogs.forEach(log => {
+        if (log && log.completedAt) {
+          const d = new Date(log.completedAt);
+          if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            dateSet.add(`${y}-${m}-${day}`);
+          }
+        }
+      });
+
+      if (dateSet.size === 0) return 0;
+
+      const sortedDates = Array.from(dateSet).sort().reverse();
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`;
+
+      const latest = sortedDates[0];
+      if (latest !== todayStr && latest !== yesterdayStr) {
+        return 0; // Streak broken
+      }
+
+      let streak = 0;
+      let checkDate = new Date(latest.split('-')[0], parseInt(latest.split('-')[1], 10) - 1, latest.split('-')[2]);
+
+      for (const dStr of sortedDates) {
+        const curStr = `${checkDate.getFullYear()}-${pad(checkDate.getMonth() + 1)}-${pad(checkDate.getDate())}`;
+        if (dStr === curStr) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
+      return streak;
+    } catch (e) {
+      return 0;
+    }
+  },
+
   getUser() {
+    let user;
     try {
       const data = localStorage.getItem(this.KEYS.USER_PROGRESS);
-      return data ? JSON.parse(data) : this.initialState.user;
+      user = data ? JSON.parse(data) : JSON.parse(JSON.stringify(this.initialState.user));
     } catch (e) {
-      return this.initialState.user;
+      user = JSON.parse(JSON.stringify(this.initialState.user));
     }
+    user.streakCount = this.calculateStreak();
+    return user;
   },
 
   saveUser(user) {
     try {
       user.updatedAt = new Date().toISOString();
+      user.streakCount = this.calculateStreak();
       localStorage.setItem(this.KEYS.USER_PROGRESS, JSON.stringify(user));
+
+      // Supabase Cloud Profile Sync
+      const client = this.initSupabase();
+      if (client && !user.isGuest && user.username) {
+        client.auth.getSession().then(({ data }) => {
+          if (data && data.session && data.session.user) {
+            client.from('profiles').upsert({
+              id: data.session.user.id,
+              username: user.username,
+              fitness_level: user.fitnessLevel || 'Intermediate',
+              is_pro: Boolean(user.isPro),
+              streak_count: user.streakCount || 0,
+              weekly_goal_target: user.weeklyGoalTarget || 5,
+              weekly_completed_count: user.weeklyCompletedCount || 0,
+              updated_at: new Date().toISOString()
+            }).then(() => {}).catch(err => console.warn('[Supabase] profile sync notice:', err));
+          }
+        });
+      }
     } catch (e) {
       console.warn('Failed to save user:', e);
+    }
+  },
+
+  async syncFromCloud() {
+    const client = this.initSupabase();
+    if (!client) return;
+
+    try {
+      const { data: sessionData } = await client.auth.getSession();
+      if (!sessionData || !sessionData.session || !sessionData.session.user) return;
+
+      const userId = sessionData.session.user.id;
+      const token = sessionData.session.access_token;
+      this.setToken(token);
+
+      // 1. Fetch Cloud Profile
+      const { data: profile, error: pErr } = await client
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profile && !pErr) {
+        const user = this.getUser();
+        user.id = profile.id;
+        user.username = profile.username;
+        user.name = profile.username;
+        user.fitnessLevel = profile.fitness_level || user.fitnessLevel;
+        user.isPro = Boolean(profile.is_pro);
+        user.weeklyGoalTarget = profile.weekly_goal_target || user.weeklyGoalTarget;
+        user.weeklyCompletedCount = profile.weekly_completed_count || user.weeklyCompletedCount;
+        user.isGuest = false;
+        this.saveUser(user);
+      }
+
+      // 2. Fetch Cloud Workout Logs
+      const { data: logs, error: lErr } = await client
+        .from('workout_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('completed_at', { ascending: false });
+
+      if (logs && !lErr && logs.length > 0) {
+        const localLogs = this.getWorkoutLogs();
+        const mergedMap = new Map();
+        localLogs.forEach(l => mergedMap.set(l.id, l));
+        logs.forEach(l => {
+          mergedMap.set(l.id, {
+            id: l.id,
+            challengeId: l.title,
+            challengeTitle: l.title,
+            dayNumber: 1,
+            completedAt: l.completed_at,
+            durationMinutes: l.duration_minutes,
+            caloriesBurned: l.calories_burned,
+            blocks: l.blocks || []
+          });
+        });
+        const mergedList = Array.from(mergedMap.values()).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+        this.saveWorkoutLogs(mergedList);
+        const user = this.getUser();
+        user.streakCount = this.calculateStreak(mergedList);
+        this.saveUser(user);
+      }
+    } catch (err) {
+      console.warn('[Supabase] syncFromCloud error:', err);
     }
   },
 
@@ -345,10 +503,6 @@ const HomeWorkoutStore = {
     const user = this.getUser();
     user.weeklyGoalTarget = Math.max(1, Math.min(7, parseInt(target, 10)));
     this.saveUser(user);
-    // Background sync to cloud
-    if (this.getToken()) {
-      this.apiRequest('/api/user/goal', 'PATCH', { target: user.weeklyGoalTarget });
-    }
     return user;
   },
 
@@ -358,7 +512,7 @@ const HomeWorkoutStore = {
       id: 'usr_001',
       name: 'Athlete',
       fitnessLevel: 'Intermediate', // 'Beginner' | 'Intermediate' | 'Advanced'
-      streakCount: 1,
+      streakCount: 0,
       isPro: false,
       weeklyGoalTarget: 5,
       weeklyCompletedCount: 0,
@@ -708,12 +862,7 @@ const HomeWorkoutStore = {
     const challenge = this.getChallengeById(challengeId);
     const user = this.getUser();
 
-    // Increment weekly completed count
-    user.weeklyCompletedCount += 1;
-    user.streakCount += 1;
-    this.saveUser(user);
-
-    // Save to workout history with accurate title
+    // 1. Save to workout history with accurate title
     const logs = this.getWorkoutLogs();
     const title = customTitle || (challenge ? challenge.title : 'Workout Session');
     const newLog = {
@@ -733,7 +882,11 @@ const HomeWorkoutStore = {
       console.warn('Failed to save logs:', e);
     }
 
-    // Cloud background sync
+    // 2. Increment weekly completed count and recalculate streak based on logs
+    user.weeklyCompletedCount += 1;
+    this.saveUser(user);
+
+    // 3. Cloud background sync
     this.logWorkoutSessionToCloud({
       workoutId: challengeId,
       title: title,
@@ -761,11 +914,6 @@ const HomeWorkoutStore = {
       count: 1
     });
 
-    // Increment progress counters
-    user.weeklyCompletedCount += 1;
-    user.streakCount += 1;
-    this.saveUser(user);
-
     // Save to workout history logs with the EXACT exercise name and muscle
     const logs = this.getWorkoutLogs();
     const title = `${exercise.name} (${muscle.toUpperCase()})`;
@@ -776,16 +924,19 @@ const HomeWorkoutStore = {
       dayNumber: 1,
       completedAt: new Date().toISOString(),
       durationMinutes: Math.round((exercise.durationSeconds || 40) / 60) || 4,
-      caloriesBurned: 35,
-      exercises: [exercise]
+      caloriesBurned: 35
     };
     logs.unshift(newLog);
 
     try {
       localStorage.setItem(this.KEYS.WORKOUT_LOGS, JSON.stringify(logs));
     } catch (e) {
-      console.warn('Failed to save log:', e);
+      console.warn('Failed to save logs:', e);
     }
+
+    // Increment progress counters and recalculate streak from logs
+    user.weeklyCompletedCount += 1;
+    this.saveUser(user);
 
     // Cloud background sync
     this.logWorkoutSessionToCloud({
@@ -1004,12 +1155,7 @@ const HomeWorkoutStore = {
     };
     user.completedMuscleHistory[mKey].push(record);
 
-    // Increment progress counters
-    user.weeklyCompletedCount += 1;
-    user.streakCount += 1;
-    this.saveUser(user);
-
-    // Save to workout history logs
+    // 1. Save to workout history logs
     const logs = this.getWorkoutLogs();
     const title = `${muscle.toUpperCase()} Routine (5 Exercises)`;
     const newLog = {
@@ -1030,7 +1176,11 @@ const HomeWorkoutStore = {
       console.warn('Failed to save log:', e);
     }
 
-    // Cloud background sync
+    // 2. Increment weekly completed counter and recalculate streak
+    user.weeklyCompletedCount += 1;
+    this.saveUser(user);
+
+    // 3. Cloud background sync
     this.logWorkoutSessionToCloud({
       workoutId: `daily-${mKey}`,
       title: title,
@@ -1045,16 +1195,39 @@ const HomeWorkoutStore = {
   },
 
   async logWorkoutSessionToCloud({ workoutId, title, muscle, dayNumber, durationMinutes, caloriesBurned, exercises }) {
-    if (!this.getToken()) return null;
-    return await this.apiRequest('/api/workouts/complete', 'POST', {
-      workout_id: workoutId,
-      workout_title: title,
-      muscle_group: muscle,
-      day_number: dayNumber || 1,
-      duration_minutes: durationMinutes || 18,
-      calories_burned: caloriesBurned || 145,
-      exercises: exercises || []
-    });
+    // 1. Supabase Cloud Sync
+    const client = this.initSupabase();
+    if (client) {
+      try {
+        const { data: sessionData } = await client.auth.getSession();
+        if (sessionData && sessionData.session && sessionData.session.user) {
+          const { error } = await client.from('workout_logs').insert({
+            user_id: sessionData.session.user.id,
+            title: title || 'Workout Session',
+            location_slug: 'home',
+            duration_minutes: durationMinutes || 18,
+            calories_burned: caloriesBurned || 145,
+            blocks: exercises || []
+          });
+          if (error) console.warn('[Supabase] workout log insert error:', error.message);
+        }
+      } catch (e) {
+        console.warn('[Supabase] workout log sync notice:', e);
+      }
+    }
+
+    // 2. Custom API fallback
+    if (this.getToken()) {
+      return await this.apiRequest('/api/workouts/complete', 'POST', {
+        workout_id: workoutId,
+        workout_title: title,
+        muscle_group: muscle,
+        day_number: dayNumber || 1,
+        duration_minutes: durationMinutes || 18,
+        calories_burned: caloriesBurned || 145,
+        exercises: exercises || []
+      });
+    }
   },
 
   async getTimelineHistory() {

@@ -39,14 +39,12 @@ const HomeWorkoutApp = {
     this.renderBodyFocus();
     this.bindEvents();
 
-    // Background sync user session from server if token exists
+    // Background sync user session from Supabase cloud if logged in
     try {
-      const serverUser = await HomeWorkoutStore.syncSession();
-      if (serverUser) {
-        this.renderHeader();
-        this.renderWeeklyGoalCard();
-        this.renderBodyFocus();
-      }
+      await HomeWorkoutStore.syncFromCloud();
+      this.renderHeader();
+      this.renderWeeklyGoalCard();
+      this.renderBodyFocus();
     } catch (e) {}
   },
 
@@ -133,13 +131,20 @@ const HomeWorkoutApp = {
 
   renderHeader() {
     const user = HomeWorkoutStore.getUser();
+    const token = HomeWorkoutStore.getToken();
     
     const streakEl = document.getElementById('streakFlameNum');
-    if (streakEl) streakEl.textContent = user.streakCount;
+    if (streakEl) streakEl.textContent = user.streakCount || 0;
 
     const userNameEl = document.getElementById('headerUserName');
     if (userNameEl) {
-      userNameEl.textContent = user.username || 'Sign In';
+      if (token && user.username && !user.isGuest) {
+        userNameEl.textContent = user.username;
+      } else if (user.isGuest && user.username) {
+        userNameEl.textContent = `${user.username} (Guest)`;
+      } else {
+        userNameEl.textContent = 'Sign In';
+      }
     }
 
     const proBtn = document.getElementById('headerProBtn');
@@ -1585,7 +1590,7 @@ const HomeWorkoutApp = {
     const usernameEl = document.getElementById('authLoggedInUsername');
     const avatarEl = document.getElementById('authAvatarLetter');
 
-    if (token && user.username) {
+    if (token && user.username && !user.isGuest) {
       if (loggedInView) loggedInView.style.display = 'block';
       if (formView) formView.style.display = 'none';
       if (usernameEl) usernameEl.textContent = user.username;

@@ -85,13 +85,14 @@ const TelemetryTracker = {
       const custom = localStorage.getItem('hw_api_base_url');
       if (custom) return custom.replace(/\/+$/, '');
     } catch (e) {}
-    if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
-      return 'https://cost-elizabeth-minneapolis-long.trycloudflare.com';
-    }
+
     return '';
   },
 
   async logEvent(eventType, eventCategory = 'interaction', eventDetails = {}) {
+    const base = this.getApiBase();
+    if (!base) return; // In static hosting without backend, skip network logging
+
     try {
       const device = this.getDeviceInfo();
       const token = (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.getToken) 
@@ -113,8 +114,7 @@ const TelemetryTracker = {
         device_type: device.deviceType
       };
 
-      const base = this.getApiBase();
-      const url = base ? `${base}/api/telemetry/event` : '/api/telemetry/event';
+      const url = `${base}/api/telemetry/event`;
 
       fetch(url, {
         method: 'POST',
@@ -126,6 +126,9 @@ const TelemetryTracker = {
 
   startHeartbeat() {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    const base = this.getApiBase();
+    if (!base) return; // In static hosting without backend, do not run heartbeat timer
+
     this.lastHeartbeatTime = Date.now();
 
     this.heartbeatInterval = setInterval(() => {
@@ -139,6 +142,8 @@ const TelemetryTracker = {
   },
 
   flushHeartbeat() {
+    const base = this.getApiBase();
+    if (!base) return;
     const now = Date.now();
     const elapsed = Math.round((now - this.lastHeartbeatTime) / 1000);
     this.lastHeartbeatTime = now;
@@ -149,6 +154,9 @@ const TelemetryTracker = {
 
   sendHeartbeat(elapsedSeconds) {
     if (elapsedSeconds <= 0) return;
+    const base = this.getApiBase();
+    if (!base) return; // In static hosting, skip
+
     try {
       const device = this.getDeviceInfo();
       const token = (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.getToken) 
@@ -169,8 +177,7 @@ const TelemetryTracker = {
         device_type: device.deviceType
       };
 
-      const base = this.getApiBase();
-      const url = base ? `${base}/api/telemetry/heartbeat` : '/api/telemetry/heartbeat';
+      const url = `${base}/api/telemetry/heartbeat`;
 
       if (navigator.sendBeacon) {
         const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
