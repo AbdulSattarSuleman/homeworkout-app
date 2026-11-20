@@ -4,13 +4,15 @@ const HomeWorkoutStore = {
     USER_PROGRESS: 'hw_user_progress',
     WORKOUT_LOGS: 'hw_workout_logs',
     CHALLENGES: 'hw_challenges',
-    AUTH_TOKEN: 'hw_auth_token',
-    ACCOUNTS_VAULT: 'hw_accounts_vault'
+    AUTH_TOKEN: 'hw_auth_token'
   },
 
   supabaseClient: null,
 
   initSupabase() {
+    // Proactively purge any legacy client-side accounts vault so password hashes are never stored locally
+    try { localStorage.removeItem('hw_accounts_vault'); } catch (e) {}
+
     if (this.supabaseClient) return this.supabaseClient;
     if (typeof window !== 'undefined' && typeof window.supabase !== 'undefined' && window.supabase.createClient) {
       const url = (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_URL) || localStorage.getItem('hw_supabase_url');
@@ -26,43 +28,6 @@ const HomeWorkoutStore = {
       }
     }
     return null;
-  },
-
-  getAccountsVault() {
-    try {
-      const data = localStorage.getItem(this.KEYS.ACCOUNTS_VAULT);
-      return data ? JSON.parse(data) : {};
-    } catch (e) {
-      return {};
-    }
-  },
-
-  saveAccountsVault(vault) {
-    try {
-      localStorage.setItem(this.KEYS.ACCOUNTS_VAULT, JSON.stringify(vault));
-    } catch (e) {
-      console.warn('Failed to save accounts vault:', e);
-    }
-  },
-
-  async hashPassword(password, salt = 'hw_salt_2026_sec') {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      try {
-        const enc = new TextEncoder();
-        const data = enc.encode(password + salt);
-        const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-      } catch (e) {}
-    }
-    // Fallback deterministic string hash
-    let hash = 0;
-    const str = password + salt;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash) + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return 'sha_' + Math.abs(hash).toString(16);
   },
 
   getToken() {
@@ -141,65 +106,50 @@ const HomeWorkoutStore = {
       throw new Error('Password must be at least 8 characters long.');
     }
 
-    // 2. Duplicate Username Check
-    const vault = this.getAccountsVault();
-    const userKey = cleanUser.toLowerCase();
-    if (vault[userKey]) {
+    const client = this.initSupabase();
+    if (!client) {
+      throw new Error('Authentication service is currently unavailable. Please check your network connection.');
+    }
+
+    const email = this.formatAuthEmail(cleanUser);
+
+    // Call Supabase Cloud Auth: Passwords and hashes are NEVER stored in localStorage!
+    const { data: supaData, error: supaErr } = await client.auth.signUp({
+      email: email,
+      password: cleanPass,
+      options: {
+        data: { username: cleanUser, fitness_level: fitnessLevel }
+      }
+    });
+
+    if (supaErr) {
+      if (supaErr.message.includes('already registered') || supaErr.message.includes('user_already_exists') || supaErr.message.includes('already taken')) {
+        throw new Error('Username already taken. Please choose another or sign in.');
+      }
+      throw new Error(supaErr.message || 'Registration failed.');
+    }
+
+    if (supaData && supaData.user && Array.isArray(supaData.user.identities) && supaData.user.identities.length === 0) {
       throw new Error('Username already taken. Please choose another or sign in.');
     }
 
-    // 3. WebCrypto SHA-256 Secure Hashing (Never store plain-text password)
-    const passwordHash = await this.hashPassword(cleanPass);
-    const userId = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 5);
-
-    vault[userKey] = {
-      id: userId,
-      username: cleanUser,
-      passwordHash: passwordHash,
-      fitnessLevel: fitnessLevel,
-      createdAt: new Date().toISOString()
-    };
-    this.saveAccountsVault(vault);
-
-    // 4. Establish Active Session
-    const token = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 8);
-    this.setToken(token);
+    const token = (supaData && supaData.session) ? supaData.session.access_token : null;
+    if (token) {
+      this.setToken(token);
+    }
 
     const user = this.getUser();
-    user.id = userId;
+    user.id = (supaData && supaData.user) ? supaData.user.id : ('usr_' + Date.now().toString(36));
     user.username = cleanUser;
     user.name = cleanUser;
     user.fitnessLevel = fitnessLevel;
     user.isGuest = false;
     this.saveUser(user);
 
-    // 5. Cloud Supabase Sync (if initialized)
-    const client = this.initSupabase();
-    if (client) {
-      try {
-        const email = this.formatAuthEmail(cleanUser);
-        const { data: supaData } = await client.auth.signUp({
-          email: email,
-          password: cleanPass,
-          options: {
-            data: { username: cleanUser, fitness_level: fitnessLevel }
-          }
-        });
-        if (supaData) {
-          if (supaData.session && supaData.session.access_token) {
-            this.setToken(supaData.session.access_token);
-          }
-          if (supaData.user) {
-            user.id = supaData.user.id;
-            this.saveUser(user);
-          }
-        }
-      } catch (err) {
-        console.warn('[Supabase] Background sign up notice:', err.message);
-      }
-    }
+    // Clean up any legacy vault from localStorage
+    try { localStorage.removeItem('hw_accounts_vault'); } catch (e) {}
 
-    return { status: 'success', user, token: this.getToken() || token };
+    return { status: 'success', user, token };
   },
 
   formatAuthEmail(cleanUser) {
@@ -217,63 +167,38 @@ const HomeWorkoutStore = {
       throw new Error('Please enter both username and password.');
     }
 
-    // 1. Check Cloud Supabase if connected
     const client = this.initSupabase();
-    if (client) {
-      try {
-        const email = this.formatAuthEmail(cleanUser);
-        const { data, error } = await client.auth.signInWithPassword({
-          email: email,
-          password: cleanPass
-        });
-        if (!error && data && data.user) {
-          const token = data.session ? data.session.access_token : ('sess_' + Date.now());
-          this.setToken(token);
-          const user = this.getUser();
-          user.id = data.user.id;
-          user.username = cleanUser;
-          user.name = cleanUser;
-          user.isGuest = false;
-          this.saveUser(user);
-          // Sync profile & workout logs from Supabase cloud
-          await this.syncFromCloud();
-          return { status: 'success', user, token };
-        } else if (error) {
-          throw new Error('No account found with this username or password was incorrect. Please check your credentials or create an account.');
-        }
-      } catch (e) {
-        if (e.message.includes('No account found') || e.message.includes('credentials') || e.message.includes('password')) {
-          throw e;
-        }
-        console.warn('[Supabase] Cloud login attempt notice:', e);
-      }
+    if (!client) {
+      throw new Error('Authentication service is currently unavailable. Please check your network connection.');
     }
 
-    // 2. Validate against Secure Local Vault
-    const vault = this.getAccountsVault();
-    const userKey = cleanUser.toLowerCase();
-    const account = vault[userKey];
+    const email = this.formatAuthEmail(cleanUser);
+    const { data, error } = await client.auth.signInWithPassword({
+      email: email,
+      password: cleanPass
+    });
 
-    if (!account) {
-      throw new Error('Username not found. Please create an account.');
+    if (error || !data || !data.user) {
+      throw new Error('No account found with this username or password was incorrect. Please check your credentials or create an account.');
     }
 
-    const computedHash = await this.hashPassword(cleanPass);
-    if (computedHash !== account.passwordHash) {
-      throw new Error('Incorrect password. Please try again.');
+    const token = data.session ? data.session.access_token : null;
+    if (token) {
+      this.setToken(token);
     }
-
-    // 3. Establish Session
-    const token = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 8);
-    this.setToken(token);
 
     const user = this.getUser();
-    user.id = account.id;
-    user.username = account.username;
-    user.name = account.username;
-    user.fitnessLevel = account.fitnessLevel || user.fitnessLevel;
+    user.id = data.user.id;
+    user.username = cleanUser;
+    user.name = cleanUser;
     user.isGuest = false;
     this.saveUser(user);
+
+    // Clean up any legacy vault from localStorage
+    try { localStorage.removeItem('hw_accounts_vault'); } catch (e) {}
+
+    // Sync profile & workout logs from Supabase cloud
+    await this.syncFromCloud();
 
     return { status: 'success', user, token };
   },
