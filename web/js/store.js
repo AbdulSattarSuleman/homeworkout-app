@@ -295,19 +295,72 @@ const HomeWorkoutStore = {
   },
 
   async syncSession() {
-    // If Supabase client active, refresh cloud session
+    const token = this.getToken();
+    const user = this.getUser();
+
+    // 1. If no token is stored
+    if (!token) {
+      if (user && user.username && !user.isGuest) {
+        // Lingering username in local state without token - reset
+        this.logout();
+      }
+      return this.getUser();
+    }
+
+    // 2. If it's a guest token, keep guest session
+    if (token.startsWith('guest_token_') || user.isGuest) {
+      return this.getUser();
+    }
+
+    // 3. Cloud Supabase Cryptographic Verification
     const client = this.initSupabase();
     if (client) {
       try {
-        const { data } = await client.auth.getSession();
-        if (data && data.session && data.session.user) {
-          const user = this.getUser();
-          user.id = data.session.user.id;
-          this.saveUser(user);
-          return user;
+        const { data: userData, error: userErr } = await client.auth.getUser(token);
+        if (userErr || !userData || !userData.user) {
+          console.warn('[Security] Invalid or spoofed session token detected. Purging unverified session:', userErr ? userErr.message : 'No verified user');
+          this.logout();
+          return this.getUser();
         }
-      } catch (e) {}
+
+        // Token is genuine! User is cryptographically verified by Supabase
+        const verifiedUser = userData.user;
+        user.id = verifiedUser.id;
+        user.isGuest = false;
+
+        // Fetch verified profile from database
+        const { data: profile } = await client
+          .from('profiles')
+          .select('*')
+          .eq('id', verifiedUser.id)
+          .maybeSingle();
+
+        if (profile) {
+          user.username = profile.username || user.username;
+          user.name = profile.username || user.name;
+          user.fitnessLevel = profile.fitness_level || user.fitnessLevel || 'Intermediate';
+          user.isPro = Boolean(profile.is_pro);
+          user.weeklyGoalTarget = Number(profile.weekly_goal_target) || 5;
+          user.weeklyCompletedCount = Number(profile.weekly_completed_count) || 0;
+        }
+
+        this.saveUser(user);
+        return user;
+      } catch (err) {
+        console.warn('[Security] Token verification error:', err);
+        this.logout();
+        return this.getUser();
+      }
     }
+
+    // 4. If Supabase is not active, verify against local vault
+    const vault = this.getAccountsVault();
+    const userKey = (user.username || '').toLowerCase();
+    if (!vault[userKey]) {
+      // Fake local user not in vault - purge
+      this.logout();
+    }
+
     return this.getUser();
   },
 
@@ -319,8 +372,8 @@ const HomeWorkoutStore = {
     user.fitnessLevel = serverUser.fitness_level || user.fitnessLevel;
     user.isPro = Boolean(serverUser.is_pro);
     user.streakCount = serverUser.streak_count || 0;
-    user.weeklyGoalTarget = serverUser.weekly_goal_target || 5;
-    user.weeklyCompletedCount = serverUser.weekly_completed_count || 0;
+    user.weeklyGoalTarget = Number(serverUser.weekly_goal_target) || 5;
+    user.weeklyCompletedCount = Number(serverUser.weekly_completed_count) || 0;
     this.saveUser(user);
     return user;
   },
@@ -331,11 +384,16 @@ const HomeWorkoutStore = {
       try { client.auth.signOut(); } catch (e) {}
     }
     this.setToken(null);
-    const user = this.getUser();
+    try {
+      localStorage.removeItem(this.KEYS.USER_PROGRESS);
+    } catch (e) {}
+    const user = JSON.parse(JSON.stringify(this.initialState.user));
     user.username = null;
     user.name = 'Athlete';
-    user.isGuest = true;
-    this.saveUser(user);
+    user.isGuest = false;
+    try {
+      localStorage.setItem(this.KEYS.USER_PROGRESS, JSON.stringify(user));
+    } catch (e) {}
     return true;
   },
 
@@ -400,6 +458,12 @@ const HomeWorkoutStore = {
     } catch (e) {
       user = JSON.parse(JSON.stringify(this.initialState.user));
     }
+    if (!user || typeof user !== 'object') {
+      user = JSON.parse(JSON.stringify(this.initialState.user));
+    }
+    user.weeklyGoalTarget = Number(user.weeklyGoalTarget) || 5;
+    user.weeklyCompletedCount = Number(user.weeklyCompletedCount) || 0;
+    user.activeWeekDays = Array.isArray(user.activeWeekDays) ? user.activeWeekDays : [16, 17, 18, 19, 20, 21, 22];
     user.streakCount = this.calculateStreak();
     return user;
   },

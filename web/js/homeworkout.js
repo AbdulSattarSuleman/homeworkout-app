@@ -33,19 +33,18 @@ const HomeWorkoutApp = {
 
   async init() {
     this.activeFocusLevel = HomeWorkoutStore.getUserLevel();
+
+    // Verify token cryptographically with Supabase and purge any spoofed/fake tokens
+    try {
+      await HomeWorkoutStore.syncSession();
+      await HomeWorkoutStore.syncFromCloud();
+    } catch (e) {}
+
     this.renderHeader();
     this.renderWeeklyGoalCard();
     this.renderChallengeCarousel();
     this.renderBodyFocus();
     this.bindEvents();
-
-    // Background sync user session from Supabase cloud if logged in
-    try {
-      await HomeWorkoutStore.syncFromCloud();
-      this.renderHeader();
-      this.renderWeeklyGoalCard();
-      this.renderBodyFocus();
-    } catch (e) {}
   },
 
   onDatabaseLoaded() {
@@ -161,8 +160,8 @@ const HomeWorkoutApp = {
     // Counter: 0/5 (0 in blue)
     const countEl = document.getElementById('wgCountActive');
     const targetEl = document.getElementById('wgTargetTotal');
-    if (countEl) countEl.textContent = user.weeklyCompletedCount;
-    if (targetEl) targetEl.textContent = `/${user.weeklyGoalTarget}`;
+    if (countEl) countEl.textContent = (typeof user.weeklyCompletedCount === 'number' && !isNaN(user.weeklyCompletedCount)) ? user.weeklyCompletedCount : 0;
+    if (targetEl) targetEl.textContent = `/${user.weeklyGoalTarget || 5}`;
 
     // 7-Day Date Strip
     const dateStrip = document.getElementById('wgDateStrip');
