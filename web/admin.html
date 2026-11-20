@@ -542,7 +542,23 @@
         🔓 Authenticate & Enter
       </button>
 
-   
+      <!-- Cloud Admin Notice for GitHub Pages -->
+      <div style="margin-top: 20px; padding: 14px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: var(--radius-sm); text-align: left;">
+        <div style="font-size: 0.8rem; font-weight: 800; color: var(--accent-blue); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+          <span>☁️</span> Cloud Admin Console (Supabase)
+        </div>
+        <p style="font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 10px;">
+          On GitHub Pages, athlete accounts and workout records sync to your <strong>Supabase Cloud Database</strong>. To view registered users and database tables live, open your Supabase Dashboard:
+        </p>
+        <a href="https://supabase.com/dashboard/project/rpjyrbbbqrehrkpckyuv" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="width: 100%; justify-content: center; text-decoration: none; font-size: 0.78rem;">
+          🚀 Open Supabase Dashboard ↗
+        </a>
+      </div>
+
+      <div style="margin-top: 14px; font-size: 0.72rem; color: var(--text-muted); text-align: center; line-height: 1.45;">
+        To log into this local Command Center, launch <code style="color: var(--accent-emerald); background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 4px;">python server.py</code> locally on your machine.<br>
+        Local Credentials: <strong style="color: #FFF;">admin</strong> / <strong style="color: #FFF;">admin123</strong>
+      </div>
     </div>
   </div>
 
@@ -776,9 +792,6 @@
           const custom = localStorage.getItem('hw_api_base_url');
           if (custom) return custom.replace(/\/+$/, '');
         } catch (e) {}
-        if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
-          return 'https://cost-elizabeth-minneapolis-long.trycloudflare.com';
-        }
         return '';
       },
 
@@ -789,7 +802,7 @@
 
       promptChangeServerUrl() {
         const current = this.getApiBase() || '(Auto / Local)';
-        const newUrl = prompt('Configure Backend API Server URL for Admin & Client:\n(e.g., https://cost-elizabeth-minneapolis-long.trycloudflare.com or https://your-server.onrender.com)\nLeave empty to use Auto / Local:', this.getApiBase());
+        const newUrl = prompt('Configure Backend API Server URL for Admin & Client:\n(e.g., http://localhost:8000 or https://your-server.onrender.com)\nLeave empty to use Auto / Local:', this.getApiBase());
         if (newUrl !== null) {
           if (newUrl.trim() === '') {
             localStorage.removeItem('hw_api_base_url');
@@ -884,7 +897,12 @@
             alertEl.style.display = 'block';
           }
         } catch (e) {
-          alertEl.textContent = 'Connection error: ' + e.message;
+          const isNetworkError = !e.response && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.name === 'TypeError');
+          if (isNetworkError) {
+            alertEl.innerHTML = `<strong>⚠️ Connection Failed:</strong> Cannot reach Python backend.<br><span style="font-size:0.74rem; opacity:0.9; display:block; margin-top:4px;">GitHub Pages runs static hosting. To use this local portal, run <code>python server.py</code> on your PC. To view cloud users & data, use the <a href="https://supabase.com/dashboard/project/rpjyrbbbqrehrkpckyuv" target="_blank" style="color:var(--accent-blue); text-decoration:underline; font-weight:bold;">Supabase Cloud Console ↗</a>.</span>`;
+          } else {
+            alertEl.textContent = 'Connection error: ' + e.message;
+          }
           alertEl.style.display = 'block';
         }
       },
