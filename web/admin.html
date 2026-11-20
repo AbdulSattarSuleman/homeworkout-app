@@ -9,6 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Supabase Cloud SDK for live serverless admin on GitHub Pages -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   
   <style>
     :root {
@@ -783,6 +785,24 @@
       refreshTimer: null,
       cachedActivities: [],
       cachedUsers: [],
+      isSupabaseMode: false,
+      SUPABASE_CONFIG: {
+        URL: 'https://rpjyrbbbqrehrkpckyuv.supabase.co',
+        ANON_KEY: 'sb_publishable_fBriFEcaShTseeF7OwVnXw_1L3mCx4n'
+      },
+      supabaseClient: null,
+
+      initSupabase() {
+        if (this.supabaseClient) return this.supabaseClient;
+        if (typeof window !== 'undefined' && window.supabase && window.supabase.createClient) {
+          try {
+            this.supabaseClient = window.supabase.createClient(this.SUPABASE_CONFIG.URL, this.SUPABASE_CONFIG.ANON_KEY);
+          } catch (e) {
+            console.warn('[Admin Supabase] Client init notice:', e);
+          }
+        }
+        return this.supabaseClient;
+      },
 
       getApiBase() {
         if (typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) {
@@ -819,25 +839,33 @@
       updateServerBadge() {
         const badge = document.getElementById('serverUrlLabel');
         if (badge) {
-          const base = this.getApiBase();
-          if (base) {
-            try {
-              const u = new URL(base);
-              badge.textContent = `API: ${u.hostname.substring(0, 16)}..`;
-            } catch (e) {
-              badge.textContent = 'API: Remote';
-            }
+          if (this.isSupabaseMode) {
+            badge.textContent = 'API: Supabase Cloud';
+            badge.style.color = 'var(--accent-emerald)';
           } else {
-            badge.textContent = 'API: Local';
+            const base = this.getApiBase();
+            if (base) {
+              try {
+                const u = new URL(base);
+                badge.textContent = `API: ${u.hostname.substring(0, 16)}..`;
+              } catch (e) {
+                badge.textContent = 'API: Remote';
+              }
+            } else {
+              badge.textContent = 'API: Local';
+            }
           }
         }
       },
 
-      init() {
-        this.updateServerBadge();
+      async init() {
         this.token = localStorage.getItem('hw_admin_token');
+        const mode = localStorage.getItem('hw_admin_mode');
+        this.isSupabaseMode = (mode === 'supabase');
+        this.updateServerBadge();
+
         if (this.token) {
-          this.verifyToken();
+          await this.verifyToken();
         } else {
           this.showGate(true);
         }
@@ -849,6 +877,24 @@
       },
 
       async verifyToken() {
+        if (this.isSupabaseMode) {
+          const supa = this.initSupabase();
+          if (supa && this.token) {
+            try {
+              const { data, error } = await supa.auth.getUser(this.token);
+              if (!error && data && data.user) {
+                this.showGate(false);
+                this.updateServerBadge();
+                this.startAutoRefresh();
+                this.refreshAll();
+                return;
+              }
+            } catch (e) {}
+          }
+          this.logout();
+          return;
+        }
+
         try {
           const res = await fetch(this.apiUrl('/api/admin/verify'), {
             headers: { 'Authorization': `Bearer ${this.token}` }
@@ -858,8 +904,7 @@
             this.startAutoRefresh();
             this.refreshAll();
           } else {
-            localStorage.removeItem('hw_admin_token');
-            this.showGate(true);
+            this.logout();
           }
         } catch (e) {
           this.showGate(true);
@@ -879,6 +924,35 @@
           return;
         }
 
+        alertEl.style.display = 'none';
+
+        // 1. Authenticate with Supabase Cloud (Live URL GitHub Pages mode)
+        const supa = this.initSupabase();
+        if (supa) {
+          try {
+            const email = username.includes('@') ? username : `${username.toLowerCase()}@homeworkout.app`;
+            const { data, error } = await supa.auth.signInWithPassword({
+              email: email,
+              password: password
+            });
+
+            if (!error && data && data.session) {
+              this.token = data.session.access_token;
+              this.isSupabaseMode = true;
+              localStorage.setItem('hw_admin_token', this.token);
+              localStorage.setItem('hw_admin_mode', 'supabase');
+              this.showGate(false);
+              this.updateServerBadge();
+              this.startAutoRefresh();
+              this.refreshAll();
+              return;
+            }
+          } catch (supaErr) {
+            console.warn('[Admin Supabase] Cloud auth attempt:', supaErr);
+          }
+        }
+
+        // 2. Fallback to Local Python server if running
         try {
           const res = await fetch(this.apiUrl('/api/admin/login'), {
             method: 'POST',
@@ -888,29 +962,32 @@
           const data = await res.json();
           if (res.ok && data.admin_token) {
             this.token = data.admin_token;
+            this.isSupabaseMode = false;
             localStorage.setItem('hw_admin_token', this.token);
+            localStorage.setItem('hw_admin_mode', 'local');
             this.showGate(false);
+            this.updateServerBadge();
             this.startAutoRefresh();
             this.refreshAll();
+            return;
           } else {
-            alertEl.textContent = data.detail || 'Access denied: Invalid credentials or not an admin.';
+            alertEl.textContent = data.detail || 'Access denied: Invalid credentials.';
             alertEl.style.display = 'block';
+            return;
           }
         } catch (e) {
-          const isNetworkError = !e.response && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.name === 'TypeError');
-          if (isNetworkError) {
-            alertEl.innerHTML = `<strong>⚠️ Connection Failed:</strong> Cannot reach Python backend.<br><span style="font-size:0.74rem; opacity:0.9; display:block; margin-top:4px;">GitHub Pages runs static hosting. To use this local portal, run <code>python server.py</code> on your PC. To view cloud users & data, use the <a href="https://supabase.com/dashboard/project/rpjyrbbbqrehrkpckyuv" target="_blank" style="color:var(--accent-blue); text-decoration:underline; font-weight:bold;">Supabase Cloud Console ↗</a>.</span>`;
-          } else {
-            alertEl.textContent = 'Connection error: ' + e.message;
-          }
+          alertEl.textContent = 'Invalid credentials or connection error. Please check your admin username and password.';
           alertEl.style.display = 'block';
         }
       },
 
       logout() {
         localStorage.removeItem('hw_admin_token');
+        localStorage.removeItem('hw_admin_mode');
         this.token = null;
+        this.isSupabaseMode = false;
         if (this.refreshTimer) clearInterval(this.refreshTimer);
+        this.updateServerBadge();
         this.showGate(true);
       },
 
@@ -949,6 +1026,45 @@
       },
 
       async fetchStats() {
+        if (this.isSupabaseMode) {
+          const supa = this.initSupabase();
+          if (!supa) return;
+          try {
+            const [{ count: userCount, data: usersList }, { count: workoutCount, data: logsList }] = await Promise.all([
+              supa.from('profiles').select('*', { count: 'exact' }),
+              supa.from('workout_logs').select('*', { count: 'exact' })
+            ]);
+
+            const totalUsers = userCount !== null ? userCount : (usersList ? usersList.length : 0);
+            const totalWorkouts = workoutCount !== null ? workoutCount : (logsList ? logsList.length : 0);
+
+            document.getElementById('kpiTotalUsers').textContent = totalUsers;
+            document.getElementById('kpiRegisteredCount').textContent = totalUsers;
+            document.getElementById('kpiGuestCount').textContent = 'Cloud';
+
+            let totalDuration = 0;
+            if (logsList && logsList.length) {
+              totalDuration = logsList.reduce((acc, log) => acc + (Number(log.duration_seconds) || 0), 0);
+            }
+            document.getElementById('kpiTotalScreenTime').textContent = this.formatSeconds(totalDuration);
+            document.getElementById('kpiAvgScreenTime').textContent = logsList && logsList.length ? this.formatSeconds(Math.round(totalDuration / logsList.length)) : '0s';
+            document.getElementById('kpiTotalSessions').textContent = totalWorkouts;
+            document.getElementById('kpiTotalWorkouts').textContent = totalWorkouts;
+            document.getElementById('kpiTotalEvents').textContent = totalWorkouts + totalUsers;
+
+            document.getElementById('kpiTopScreenSize').textContent = 'Cloud DB';
+            document.getElementById('kpiDeviceSummary').textContent = 'Supabase Cloud Fleet';
+
+            this.renderDevicesTab(
+              [{ screen_resolution: 'Cloud Client (Mobile/Desktop)', count: totalWorkouts || 1 }],
+              [{ device_type: 'Cross-Platform Web Athletes', count: totalUsers || 1 }]
+            );
+          } catch (e) {
+            console.warn('[Admin Supabase] fetchStats error:', e);
+          }
+          return;
+        }
+
         try {
           const res = await fetch(this.apiUrl('/api/admin/stats'), {
             headers: { 'Authorization': `Bearer ${this.token}` }
@@ -1018,6 +1134,30 @@
       },
 
       async fetchActivities() {
+        if (this.isSupabaseMode) {
+          const supa = this.initSupabase();
+          if (!supa) return;
+          try {
+            const { data: logs, error } = await supa.from('workout_logs').select('*').order('completed_at', { ascending: false }).limit(100);
+            this.cachedActivities = (logs || []).map(log => ({
+              id: log.id,
+              event_category: 'workout',
+              event_name: 'workout_complete',
+              created_at: log.completed_at,
+              username: log.user_id ? log.user_id.substring(0, 8) + '...' : 'Athlete',
+              details: {
+                workoutTitle: log.routine_id ? log.routine_id.replace(/_/g, ' ').toUpperCase() : 'Workout Session',
+                action: `${Math.round((log.duration_seconds || 0) / 60)} min completed`
+              }
+            }));
+            document.getElementById('tabCountActivities').textContent = this.cachedActivities.length;
+            this.renderActivities(this.cachedActivities);
+          } catch (e) {
+            console.warn('[Admin Supabase] fetchActivities error:', e);
+          }
+          return;
+        }
+
         try {
           const res = await fetch(this.apiUrl(`/api/admin/activities?limit=150&category=${this.activeCategory}`), {
             headers: { 'Authorization': `Bearer ${this.token}` }
@@ -1111,6 +1251,20 @@
       },
 
       async fetchUsers() {
+        if (this.isSupabaseMode) {
+          const supa = this.initSupabase();
+          if (!supa) return;
+          try {
+            const { data: users, error } = await supa.from('profiles').select('*').order('created_at', { ascending: false });
+            this.cachedUsers = users || [];
+            document.getElementById('tabCountUsers').textContent = this.cachedUsers.length;
+            this.renderUsers(this.cachedUsers);
+          } catch (e) {
+            console.warn('[Admin Supabase] fetchUsers error:', e);
+          }
+          return;
+        }
+
         try {
           const res = await fetch(this.apiUrl('/api/admin/users'), {
             headers: { 'Authorization': `Bearer ${this.token}` }
@@ -1135,8 +1289,10 @@
         }
 
         tbody.innerHTML = usersList.map(u => {
-          const isGuest = u.username.startsWith('gym_user_');
-          const lastActiveStr = u.last_activity_at ? new Date(u.last_activity_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—';
+          const isGuest = u.username && u.username.startsWith('gym_user_');
+          const lastActiveStr = u.updated_at ? new Date(u.updated_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : (u.last_activity_at ? new Date(u.last_activity_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—');
+          const userIdStr = String(u.id);
+          const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
           return `
             <tr>
               <td>
@@ -1145,18 +1301,18 @@
                   ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                   ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">1-TAP GUEST</span>' : ''}
                 </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${u.id}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${shortId}</div>
               </td>
               <td><span style="font-weight: 700;">${u.fitness_level || 'Intermediate'}</span></td>
               <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${u.streak_count || 0}</span></td>
               <td>${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5}</td>
-              <td><strong style="color: var(--accent-blue);">${u.workout_count || 0}</strong></td>
-              <td><span style="font-weight: 700; color: var(--accent-emerald);">${this.formatSeconds(u.total_screen_time_seconds)}</span></td>
-              <td><span class="act-device-pill">${u.last_device_type || '—'}</span></td>
-              <td><span class="act-device-pill" style="color: var(--accent-blue);">${u.last_screen_resolution || '—'}</span></td>
+              <td><strong style="color: var(--accent-blue);">${u.workout_count || u.weekly_completed_count || 0}</strong></td>
+              <td><span style="font-weight: 700; color: var(--accent-emerald);">${this.formatSeconds(u.total_screen_time_seconds || 0)}</span></td>
+              <td><span class="act-device-pill">${u.last_device_type || 'Cloud Sync'}</span></td>
+              <td><span class="act-device-pill" style="color: var(--accent-blue);">${u.last_screen_resolution || 'Adaptive'}</span></td>
               <td style="font-size: 0.75rem; color: var(--text-muted);">${lastActiveStr}</td>
               <td>
-                <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.72rem;" onclick="AdminApp.inspectUser(${u.id})">
+                <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.72rem;" onclick="AdminApp.inspectUser('${userIdStr}')">
                   🔍 Inspect
                 </button>
               </td>
@@ -1176,6 +1332,69 @@
       },
 
       async inspectUser(userId) {
+        if (this.isSupabaseMode) {
+          const user = this.cachedUsers.find(u => String(u.id) === String(userId)) || { id: userId, username: 'Athlete' };
+          const supa = this.initSupabase();
+          let workouts = [];
+          if (supa) {
+            try {
+              const { data: logs } = await supa.from('workout_logs').select('*').eq('user_id', userId).order('completed_at', { ascending: false });
+              workouts = (logs || []).map(l => ({
+                workout_title: l.routine_id ? l.routine_id.replace(/_/g, ' ').toUpperCase() : 'Completed Routine',
+                completed_at: l.completed_at ? new Date(l.completed_at).toLocaleString() : 'Recent',
+                duration_minutes: Math.round((l.duration_seconds || 0) / 60),
+                calories_burned: Math.round((l.duration_seconds || 0) * 0.12),
+                exercises: l.exercises_completed || []
+              }));
+            } catch (e) {}
+          }
+
+          const modal = document.getElementById('userDetailModal');
+          const title = document.getElementById('detailModalTitle');
+          const body = document.getElementById('detailModalBody');
+
+          title.innerHTML = `👤 Inspecting Athlete: <strong>@${user.username}</strong>`;
+
+          body.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Streak</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-amber);">🔥 ${user.streak_count || 0} Days</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Fitness Level</div>
+                <div style="font-size: 1.2rem; font-weight: 800; color: #FFF;">${user.fitness_level || 'Intermediate'}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-blue);">${user.weekly_completed_count || 0}/${user.weekly_goal_target || 5}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Total Workouts</div>
+                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-emerald);">${workouts.length}</div>
+              </div>
+            </div>
+
+            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF;">🏋️ Completed Workout Sessions (${workouts.length})</h4>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
+              ${workouts.length === 0 ? '<div style="color: var(--text-muted); font-size: 0.8rem;">No workouts completed yet.</div>' : workouts.map(w => `
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <strong style="color: #FFF; font-size: 0.88rem;">${w.workout_title}</strong>
+                    <div style="font-size: 0.72rem; color: var(--text-muted);">${w.completed_at} • ${w.duration_minutes} min • ${w.calories_burned} kcal</div>
+                  </div>
+                  <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 2px 8px; border-radius: 4px;">
+                    ${(w.exercises || []).length} Exercises
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+
+          if (modal) modal.classList.add('active');
+          return;
+        }
+
         try {
           const res = await fetch(this.apiUrl(`/api/admin/user/${userId}/detail`), {
             headers: { 'Authorization': `Bearer ${this.token}` }
