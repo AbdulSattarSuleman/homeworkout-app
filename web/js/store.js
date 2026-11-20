@@ -177,7 +177,7 @@ const HomeWorkoutStore = {
     const client = this.initSupabase();
     if (client) {
       try {
-        const email = cleanUser.includes('@') ? cleanUser : `${cleanUser.replace(/[^a-zA-Z0-9_]/g, '')}@homeworkout.app`;
+        const email = this.formatAuthEmail(cleanUser);
         await client.auth.signUp({
           email: email,
           password: cleanPass,
@@ -193,6 +193,13 @@ const HomeWorkoutStore = {
     return { status: 'success', user, token };
   },
 
+  formatAuthEmail(cleanUser) {
+    if (!cleanUser) return 'athlete@homeworkout.app';
+    if (cleanUser.includes('@')) return cleanUser.trim().toLowerCase();
+    const sanitized = cleanUser.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    return (sanitized || ('athlete_' + Date.now().toString(36))) + '@homeworkout.app';
+  },
+
   async login(username, password) {
     const cleanUser = (username || '').trim();
     const cleanPass = (password || '').trim();
@@ -205,7 +212,7 @@ const HomeWorkoutStore = {
     const client = this.initSupabase();
     if (client) {
       try {
-        const email = cleanUser.includes('@') ? cleanUser : `${cleanUser.replace(/[^a-zA-Z0-9_]/g, '')}@homeworkout.app`;
+        const email = this.formatAuthEmail(cleanUser);
         const { data, error } = await client.auth.signInWithPassword({
           email: email,
           password: cleanPass
