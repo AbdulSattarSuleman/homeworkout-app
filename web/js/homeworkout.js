@@ -2085,6 +2085,15 @@ const HomeWorkoutApp = {
         }, 700);
       } else {
         // register mode
+        if (!u || u.length < 3) {
+          throw new Error('Please choose a username with at least 3 characters.');
+        }
+        if (!email || !email.includes('@') || !email.includes('.')) {
+          throw new Error('Please enter a valid personal email address (e.g. you@example.com). This is required for password recovery.');
+        }
+        if (!p || p.length < 8) {
+          throw new Error('Please enter a password with at least 8 characters.');
+        }
         await HomeWorkoutStore.register(u, email, p, this.activeFocusLevel || 'Intermediate');
         this.showAuthFeedback(`Account created successfully! Welcome, ${u}!`, 'success');
         setTimeout(() => {

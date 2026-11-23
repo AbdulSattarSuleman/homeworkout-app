@@ -122,6 +122,9 @@ const HomeWorkoutStore = {
     if (cleanUser.length < 3) {
       throw new Error('Username must be at least 3 characters long.');
     }
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.') || cleanEmail.endsWith('@homeworkout.app')) {
+      throw new Error('Please enter a valid personal email address (e.g. you@gmail.com). A real email is required for password recovery and account verification.');
+    }
     if (!cleanPass) {
       throw new Error('Please enter a password.');
     }
@@ -134,10 +137,8 @@ const HomeWorkoutStore = {
       throw new Error('Authentication service is currently unavailable. Please check your network connection.');
     }
 
-    // Use supplied email if valid; otherwise fallback to synthetic handle
-    const finalEmail = (cleanEmail && cleanEmail.includes('@')) 
-      ? cleanEmail 
-      : this.formatAuthEmail(cleanUser);
+    // Call Supabase Cloud Auth with user's verified real email
+    const finalEmail = cleanEmail;
 
     // Call Supabase Cloud Auth
     const { data: supaData, error: supaErr } = await client.auth.signUp({
