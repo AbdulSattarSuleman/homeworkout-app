@@ -168,9 +168,7 @@ const HomeWorkoutApp = {
 
     const proBtn = document.getElementById('headerProBtn');
     if (proBtn) {
-      proBtn.innerHTML = user.isPro 
-        ? `👑 PRO ACTIVE` 
-        : `👑 PRO ↗`;
+      proBtn.style.display = 'none';
     }
   },
 
@@ -543,7 +541,7 @@ const HomeWorkoutApp = {
       const patternId = cand.movement_pattern || (typeof ExerciseDataset !== 'undefined' ? ExerciseDataset.inferPattern(cand) : null);
       const candPat = (patternId && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getPattern) ? ExerciseDataset.getPattern(patternId) : null;
       const patBadge = candPat ? `<span style="background: rgba(0, 82, 255, 0.08); color: var(--brand-blue); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${candPat.icon} ${candPat.name}</span>` : '';
-      const proBadge = cand.is_pro ? '<span style="background: #FEF3C7; color: #D97706; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">👑 PRO</span>' : '';
+      const proBadge = ''; // Hidden while all exercises are free
 
       return `
         <div class="swap-option-card" onclick="HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
@@ -903,7 +901,7 @@ const HomeWorkoutApp = {
       const patternId = ex.movement_pattern || (typeof ExerciseDataset !== 'undefined' ? ExerciseDataset.inferPattern(ex) : null);
       const patObj = (patternId && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getPattern) ? ExerciseDataset.getPattern(patternId) : null;
       const patternBadge = patObj ? `<span style="background: rgba(0, 82, 255, 0.08); color: var(--brand-blue); font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${patObj.icon} ${patObj.name}</span>` : '';
-      const proBadge = ex.is_pro ? '<span style="background: #FEF3C7; color: #D97706; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">👑 PRO</span>' : '';
+      const proBadge = ''; // Hidden while all exercises are free
 
       return `
         <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
