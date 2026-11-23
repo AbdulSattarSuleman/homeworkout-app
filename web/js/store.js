@@ -8,6 +8,7 @@ const HomeWorkoutStore = {
   },
 
   supabaseClient: null,
+  authListenerBound: false,
 
   initSupabase() {
     // Proactively purge any legacy client-side accounts vault so password hashes are never stored locally
@@ -19,8 +20,29 @@ const HomeWorkoutStore = {
       const anonKey = (window.APP_CONFIG && window.APP_CONFIG.SUPABASE_ANON_KEY) || localStorage.getItem('hw_supabase_anon_key');
       if (url && anonKey) {
         try {
-          this.supabaseClient = window.supabase.createClient(url, anonKey);
-          console.log('[Store] Supabase Cloud Client Connected');
+          this.supabaseClient = window.supabase.createClient(url, anonKey, {
+            auth: {
+              persistSession: true,
+              autoRefreshToken: true,
+              detectSessionInUrl: true
+            }
+          });
+
+          // Bind auth state change listener once
+          if (!this.authListenerBound && this.supabaseClient.auth) {
+            this.authListenerBound = true;
+            this.supabaseClient.auth.onAuthStateChange((event, session) => {
+              if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                if (session && session.access_token) {
+                  this.setToken(session.access_token);
+                }
+              } else if (event === 'SIGNED_OUT') {
+                this.setToken(null);
+              }
+            });
+          }
+
+          console.log('[Store] Supabase Cloud Client Connected with Auto-Refresh');
           return this.supabaseClient;
         } catch (e) {
           console.warn('[Store] Supabase connection notice:', e);
@@ -88,13 +110,14 @@ const HomeWorkoutStore = {
     }
   },
 
-  async register(username, password, fitnessLevel = 'Intermediate') {
+  async register(username, email, password, fitnessLevel = 'Intermediate') {
     const cleanUser = (username || '').trim();
+    const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPass = (password || '').trim();
 
     // 1. Strict Input Validations
     if (!cleanUser) {
-      throw new Error('Please enter a username or email.');
+      throw new Error('Please choose an athlete username.');
     }
     if (cleanUser.length < 3) {
       throw new Error('Username must be at least 3 characters long.');
@@ -111,26 +134,33 @@ const HomeWorkoutStore = {
       throw new Error('Authentication service is currently unavailable. Please check your network connection.');
     }
 
-    const email = this.formatAuthEmail(cleanUser);
+    // Use supplied email if valid; otherwise fallback to synthetic handle
+    const finalEmail = (cleanEmail && cleanEmail.includes('@')) 
+      ? cleanEmail 
+      : this.formatAuthEmail(cleanUser);
 
-    // Call Supabase Cloud Auth: Passwords and hashes are NEVER stored in localStorage!
+    // Call Supabase Cloud Auth
     const { data: supaData, error: supaErr } = await client.auth.signUp({
-      email: email,
+      email: finalEmail,
       password: cleanPass,
       options: {
-        data: { username: cleanUser, fitness_level: fitnessLevel }
+        data: { 
+          username: cleanUser, 
+          recovery_email: (cleanEmail && cleanEmail.includes('@')) ? cleanEmail : finalEmail,
+          fitness_level: fitnessLevel 
+        }
       }
     });
 
     if (supaErr) {
       if (supaErr.message.includes('already registered') || supaErr.message.includes('user_already_exists') || supaErr.message.includes('already taken')) {
-        throw new Error('Username already taken. Please choose another or sign in.');
+        throw new Error('An account with this username or email already exists. Please choose another or sign in.');
       }
       throw new Error(supaErr.message || 'Registration failed.');
     }
 
     if (supaData && supaData.user && Array.isArray(supaData.user.identities) && supaData.user.identities.length === 0) {
-      throw new Error('Username already taken. Please choose another or sign in.');
+      throw new Error('An account with this username or email already exists. Please choose another or sign in.');
     }
 
     const token = (supaData && supaData.session) ? supaData.session.access_token : null;
@@ -142,9 +172,17 @@ const HomeWorkoutStore = {
     user.id = (supaData && supaData.user) ? supaData.user.id : ('usr_' + Date.now().toString(36));
     user.username = cleanUser;
     user.name = cleanUser;
+    user.email = (cleanEmail && cleanEmail.includes('@')) ? cleanEmail : finalEmail;
     user.fitnessLevel = fitnessLevel;
     user.isGuest = false;
     this.saveUser(user);
+
+    // Persist username-to-email mapping locally so user can sign in via username anytime
+    try {
+      const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
+      emailMap[cleanUser.toLowerCase()] = finalEmail;
+      localStorage.setItem('hw_username_email_map', JSON.stringify(emailMap));
+    } catch (e) {}
 
     // Clean up any legacy vault from localStorage
     try { localStorage.removeItem('hw_accounts_vault'); } catch (e) {}
@@ -159,12 +197,12 @@ const HomeWorkoutStore = {
     return (sanitized || ('athlete_' + Date.now().toString(36))) + '@homeworkout.app';
   },
 
-  async login(username, password) {
-    const cleanUser = (username || '').trim();
+  async login(identifier, password) {
+    const cleanId = (identifier || '').trim();
     const cleanPass = (password || '').trim();
 
-    if (!cleanUser || !cleanPass) {
-      throw new Error('Please enter both username and password.');
+    if (!cleanId || !cleanPass) {
+      throw new Error('Please enter both your username/email and password.');
     }
 
     const client = this.initSupabase();
@@ -172,14 +210,29 @@ const HomeWorkoutStore = {
       throw new Error('Authentication service is currently unavailable. Please check your network connection.');
     }
 
-    const email = this.formatAuthEmail(cleanUser);
+    // Determine target email: direct email vs mapped username vs synthesized fallback
+    let targetEmail = cleanId;
+    if (!cleanId.includes('@')) {
+      try {
+        const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
+        if (emailMap[cleanId.toLowerCase()]) {
+          targetEmail = emailMap[cleanId.toLowerCase()];
+        } else {
+          targetEmail = this.formatAuthEmail(cleanId);
+        }
+      } catch (e) {
+        targetEmail = this.formatAuthEmail(cleanId);
+      }
+    }
+
     const { data, error } = await client.auth.signInWithPassword({
-      email: email,
+      email: targetEmail,
       password: cleanPass
     });
 
     if (error || !data || !data.user) {
-      throw new Error('No account found with this username or password was incorrect. Please check your credentials or create an account.');
+      // If failed and was a username without mapping, attempt with lowercase
+      throw new Error('No account found with these credentials or password was incorrect. Please check your credentials or create an account.');
     }
 
     const token = data.session ? data.session.access_token : null;
@@ -189,10 +242,20 @@ const HomeWorkoutStore = {
 
     const user = this.getUser();
     user.id = data.user.id;
-    user.username = cleanUser;
-    user.name = cleanUser;
+    // Derive friendly username: metadata username > identifier > email handle
+    const metaUsername = data.user.user_metadata && data.user.user_metadata.username;
+    user.username = metaUsername || (!cleanId.includes('@') ? cleanId : (data.user.email ? data.user.email.split('@')[0] : 'Athlete'));
+    user.name = user.username;
+    user.email = data.user.email || targetEmail;
     user.isGuest = false;
     this.saveUser(user);
+
+    // Save username mapping
+    try {
+      const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
+      emailMap[user.username.toLowerCase()] = targetEmail;
+      localStorage.setItem('hw_username_email_map', JSON.stringify(emailMap));
+    } catch (e) {}
 
     // Clean up any legacy vault from localStorage
     try { localStorage.removeItem('hw_accounts_vault'); } catch (e) {}
@@ -201,6 +264,94 @@ const HomeWorkoutStore = {
     await this.syncFromCloud();
 
     return { status: 'success', user, token };
+  },
+
+  async sendPasswordResetEmail(emailOrUser) {
+    const cleanInput = (emailOrUser || '').trim();
+    if (!cleanInput) {
+      throw new Error('Please enter your email or username.');
+    }
+
+    let targetEmail = cleanInput;
+    if (!targetEmail.includes('@')) {
+      // Check stored username-to-email mapping
+      try {
+        const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
+        if (emailMap[cleanInput.toLowerCase()]) {
+          targetEmail = emailMap[cleanInput.toLowerCase()];
+        }
+      } catch (e) {}
+    }
+
+    if (!targetEmail.includes('@') || targetEmail.endsWith('@homeworkout.app')) {
+      throw new Error('This account was created without a verified external email address. Password reset emails can only be sent to valid email addresses. If you know your password, please sign in and link your recovery email in Settings.');
+    }
+
+    const client = this.initSupabase();
+    if (!client) {
+      throw new Error('Authentication service unavailable. Please check your network.');
+    }
+
+    // Redirect user back to the app root upon clicking the reset link
+    const redirectUrl = window.location.origin + window.location.pathname;
+    const { error } = await client.auth.resetPasswordForEmail(targetEmail, {
+      redirectTo: redirectUrl
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Could not send reset email.');
+    }
+
+    return { status: 'success', email: targetEmail };
+  },
+
+  async updateNewPassword(newPassword) {
+    const cleanPass = (newPassword || '').trim();
+    if (!cleanPass || cleanPass.length < 8) {
+      throw new Error('Password must be at least 8 characters long.');
+    }
+
+    const client = this.initSupabase();
+    if (!client) {
+      throw new Error('Authentication service unavailable.');
+    }
+
+    const { data, error } = await client.auth.updateUser({
+      password: cleanPass
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to update password.');
+    }
+
+    return { status: 'success', user: data.user };
+  },
+
+  async updateUserAccount(newEmail, newPassword) {
+    const client = this.initSupabase();
+    if (!client) throw new Error('Authentication service unavailable.');
+
+    const updatePayload = {};
+    if (newEmail && newEmail.includes('@')) {
+      updatePayload.email = newEmail.trim().toLowerCase();
+    }
+    if (newPassword && newPassword.trim().length >= 8) {
+      updatePayload.password = newPassword.trim();
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      throw new Error('Please provide a valid email or a new password with at least 8 characters.');
+    }
+
+    const { data, error } = await client.auth.updateUser(updatePayload);
+    if (error) throw new Error(error.message || 'Update failed.');
+
+    const user = this.getUser();
+    if (updatePayload.email) {
+      user.email = updatePayload.email;
+      this.saveUser(user);
+    }
+    return { status: 'success', user: data.user };
   },
 
   async guestLogin() {
@@ -220,94 +371,87 @@ const HomeWorkoutStore = {
   },
 
   async syncSession() {
-    const token = this.getToken();
     const user = this.getUser();
 
-    // 1. If no token is stored
-    if (!token) {
-      if (user && user.username && !user.isGuest) {
-        // Lingering username in local state without token - reset
-        this.logout();
+    // 1. Guest session: keep intact locally
+    if (user.isGuest) {
+      return user;
+    }
+
+    // 2. Obtain Supabase client (with slight grace wait if scripts are finishing)
+    let client = this.initSupabase();
+    if (!client && typeof window !== 'undefined') {
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 80));
+        client = this.initSupabase();
+        if (client) break;
       }
-      return this.getUser();
     }
 
-    // 2. If it's a guest token, keep guest session
-    if (token.startsWith('guest_token_') || user.isGuest) {
-      return this.getUser();
-    }
-
-    // 3. Cloud Supabase Cryptographic Verification
-    const client = this.initSupabase();
+    // 3. Supabase Cloud Session Verification & Token Auto-Refresh
     if (client) {
       try {
-        const { data: userData, error: userErr } = await client.auth.getUser(token);
-        if (userErr || !userData || !userData.user) {
-          console.warn('[Security] Invalid or spoofed session token detected. Purging unverified session:', userErr ? userErr.message : 'No verified user');
-          this.logout();
-          return this.getUser();
+        // getSession() automatically uses cached session & auto-refreshes tokens safely
+        const { data: sessionData } = await client.auth.getSession();
+        const session = sessionData ? sessionData.session : null;
+
+        if (session && session.user) {
+          const verifiedUser = session.user;
+          const token = session.access_token;
+          if (token) this.setToken(token);
+
+          user.id = verifiedUser.id;
+          user.isGuest = false;
+          user.email = verifiedUser.email || user.email;
+
+          // Fetch verified profile from database
+          const { data: profile } = await client
+            .from('profiles')
+            .select('*')
+            .eq('id', verifiedUser.id)
+            .maybeSingle();
+
+          if (profile) {
+            user.username = profile.username || user.username;
+            user.name = profile.username || user.name;
+            user.fitnessLevel = profile.fitness_level || user.fitnessLevel || 'Intermediate';
+            user.isPro = Boolean(profile.is_pro);
+            user.weeklyGoalTarget = Number(profile.weekly_goal_target) || 5;
+            user.weeklyCompletedCount = Number(profile.weekly_completed_count) || 0;
+            user.activeLocationId = profile.active_location_id || user.activeLocationId || 'home';
+            user.createdAt = profile.created_at || user.createdAt;
+          } else {
+            // Profile row doesn't exist yet; create it
+            const username = (verifiedUser.user_metadata && verifiedUser.user_metadata.username) 
+              || user.username 
+              || (verifiedUser.email ? verifiedUser.email.split('@')[0] : 'Athlete');
+            const nowIso = new Date().toISOString();
+            user.username = username;
+            user.name = username;
+            await client.from('profiles').upsert({
+              id: verifiedUser.id,
+              username: username,
+              fitness_level: user.fitnessLevel || 'Intermediate',
+              is_pro: Boolean(user.isPro),
+              streak_count: user.streakCount || 0,
+              weekly_goal_target: user.weeklyGoalTarget || 5,
+              weekly_completed_count: user.weeklyCompletedCount || 0,
+              active_location_id: user.activeLocationId || 'home',
+              created_at: verifiedUser.created_at || nowIso,
+              updated_at: nowIso
+            }).catch(e => console.warn('[Supabase] Auto-create profile notice:', e));
+          }
+
+          this.saveUser(user);
+          return user;
         }
-
-        // Token is genuine! User is cryptographically verified by Supabase
-        const verifiedUser = userData.user;
-        user.id = verifiedUser.id;
-        user.isGuest = false;
-
-        // Fetch verified profile from database
-        const { data: profile } = await client
-          .from('profiles')
-          .select('*')
-          .eq('id', verifiedUser.id)
-          .maybeSingle();
-
-        if (profile) {
-          user.username = profile.username || user.username;
-          user.name = profile.username || user.name;
-          user.fitnessLevel = profile.fitness_level || user.fitnessLevel || 'Intermediate';
-          user.isPro = Boolean(profile.is_pro);
-          user.weeklyGoalTarget = Number(profile.weekly_goal_target) || 5;
-          user.weeklyCompletedCount = Number(profile.weekly_completed_count) || 0;
-          user.activeLocationId = profile.active_location_id || user.activeLocationId || 'home';
-          user.createdAt = profile.created_at || user.createdAt;
-        } else {
-          // Profile row doesn't exist yet in Supabase profiles table! Auto-create it now:
-          const username = (verifiedUser.user_metadata && verifiedUser.user_metadata.username) 
-            || user.username 
-            || (verifiedUser.email ? verifiedUser.email.split('@')[0] : 'Athlete');
-          const nowIso = new Date().toISOString();
-          user.username = username;
-          user.name = username;
-          await client.from('profiles').upsert({
-            id: verifiedUser.id,
-            username: username,
-            fitness_level: user.fitnessLevel || 'Intermediate',
-            is_pro: Boolean(user.isPro),
-            streak_count: user.streakCount || 0,
-            weekly_goal_target: user.weeklyGoalTarget || 5,
-            weekly_completed_count: user.weeklyCompletedCount || 0,
-            active_location_id: user.activeLocationId || 'home',
-            created_at: verifiedUser.created_at || nowIso,
-            updated_at: nowIso
-          }).catch(e => console.warn('[Supabase] Auto-create profile notice:', e));
-        }
-
-        this.saveUser(user);
-        return user;
       } catch (err) {
-        console.warn('[Security] Token verification error:', err);
-        this.logout();
-        return this.getUser();
+        console.warn('[Session] Session verification notice (offline or network delay):', err);
+        // CRITICAL: DO NOT logout or purge user progress on network glitch / offline reload!
       }
     }
 
-    // 4. If Supabase is not active, verify against local vault
-    const vault = this.getAccountsVault();
-    const userKey = (user.username || '').toLowerCase();
-    if (!vault[userKey]) {
-      // Fake local user not in vault - purge
-      this.logout();
-    }
-
+    // 4. Return current local user (offline-first resilience)
     return this.getUser();
   },
 

@@ -35,7 +35,10 @@ const HomeWorkoutApp = {
   async init() {
     this.activeFocusLevel = HomeWorkoutStore.getUserLevel();
 
-    // Verify token cryptographically with Supabase and purge any spoofed/fake tokens
+    // 1. Initialize HTML5 History API & popstate listeners for seamless native back button navigation
+    this.initNavigation();
+
+    // 2. Resilient session synchronization & background profile sync
     try {
       await HomeWorkoutStore.syncSession();
       await HomeWorkoutStore.syncFromCloud();
@@ -46,6 +49,9 @@ const HomeWorkoutApp = {
     this.renderChallengeCarousel();
     this.renderBodyFocus();
     this.bindEvents();
+
+    // 3. Detect if user opened the page from a password recovery link
+    this.checkForPasswordRecoveryHash();
   },
 
   onDatabaseLoaded() {
@@ -470,17 +476,16 @@ const HomeWorkoutApp = {
     }
     if (searchInput) searchInput.value = '';
 
-    if (modal) modal.classList.add('active');
+    this.openModal('swapExerciseModalBackdrop', 'swap');
     if (typeof TelemetryTracker !== 'undefined' && currentEx) {
       TelemetryTracker.trackScreen('swap_exercise_modal', currentEx.name);
     }
     this.renderSwapOptions();
   },
 
-  closeSwapModal() {
+  closeSwapModal(fromPop = false) {
     this.swapTargetIndex = null;
-    const modal = document.getElementById('swapExerciseModalBackdrop');
-    if (modal) modal.classList.remove('active');
+    this.closeModal('swapExerciseModalBackdrop', fromPop);
   },
 
   getAvailableSwapCandidates() {
@@ -1152,7 +1157,10 @@ const HomeWorkoutApp = {
     this.isPaused = false;
 
     const modal = document.getElementById('workoutRunnerModal');
-    if (modal) modal.classList.add('active');
+    if (modal) {
+      modal.classList.add('active');
+      this.pushNavState({ modal: 'workoutRunnerModal' }, 'Workout Runner', '#runner');
+    }
     this.loadCurrentExercise();
   },
 
@@ -1169,6 +1177,7 @@ const HomeWorkoutApp = {
     if (!modal) return;
 
     modal.classList.add('active');
+    this.pushNavState({ modal: 'workoutRunnerModal' }, 'Workout Runner', '#runner');
     this.loadCurrentExercise();
   },
 
@@ -1370,11 +1379,36 @@ const HomeWorkoutApp = {
     }
   },
 
-  closeWorkoutRunner() {
-    if (confirm('Quit current workout session?')) {
+  closeWorkoutRunner(fromPop = false) {
+    if (fromPop || confirm('Quit current workout session?')) {
       if (this.timerInterval) clearInterval(this.timerInterval);
       const modal = document.getElementById('workoutRunnerModal');
       if (modal) modal.classList.remove('active');
+      if (!fromPop && typeof window !== 'undefined' && window.history) {
+        if (window.history.state && window.history.state.modal === 'workoutRunnerModal') {
+          window.history.back();
+        }
+      }
+    }
+  },
+
+  // ========================================================
+  // CENTRAL MODAL & HISTORY MANAGEMENT SYSTEM
+  // ========================================================
+  openModal(modalId, hash) {
+    const el = document.getElementById(modalId);
+    if (!el) return;
+    el.classList.add('active');
+    this.pushNavState({ modal: modalId }, '', '#' + (hash || modalId));
+  },
+
+  closeModal(modalId, fromPop = false) {
+    const el = document.getElementById(modalId);
+    if (el) el.classList.remove('active');
+    if (!fromPop && typeof window !== 'undefined' && window.history) {
+      if (window.history.state && window.history.state.modal === modalId) {
+        window.history.back();
+      }
     }
   },
 
@@ -1393,15 +1427,14 @@ const HomeWorkoutApp = {
       });
     }
 
-    modal.classList.add('active');
+    this.openModal('levelModalBackdrop', 'level');
     if (typeof TelemetryTracker !== 'undefined') {
       TelemetryTracker.trackScreen('fitness_level_modal', currentLevel);
     }
   },
 
-  closeLevelModal() {
-    const modal = document.getElementById('levelModalBackdrop');
-    if (modal) modal.classList.remove('active');
+  closeLevelModal(fromPop = false) {
+    this.closeModal('levelModalBackdrop', fromPop);
   },
 
   setUserLevel(lvl) {
@@ -1429,7 +1462,7 @@ const HomeWorkoutApp = {
       `).join('');
     }
 
-    modal.classList.add('active');
+    this.openModal('goalModalBackdrop', 'goal');
     if (typeof TelemetryTracker !== 'undefined') {
       TelemetryTracker.trackScreen('weekly_goal_modal', `${user.weeklyGoalTarget || 5}_days`);
     }
@@ -1441,25 +1474,22 @@ const HomeWorkoutApp = {
     this.closeGoalModal();
   },
 
-  closeGoalModal() {
-    const modal = document.getElementById('goalModalBackdrop');
-    if (modal) modal.classList.remove('active');
+  closeGoalModal(fromPop = false) {
+    this.closeModal('goalModalBackdrop', fromPop);
   },
 
   // ========================================================
   // PRO MEMBERSHIP MODAL
   // ========================================================
   openProModal() {
-    const modal = document.getElementById('proModalBackdrop');
-    if (modal) modal.classList.add('active');
+    this.openModal('proModalBackdrop', 'pro');
     if (typeof TelemetryTracker !== 'undefined') {
       TelemetryTracker.trackScreen('pro_membership_modal');
     }
   },
 
-  closeProModal() {
-    const modal = document.getElementById('proModalBackdrop');
-    if (modal) modal.classList.remove('active');
+  closeProModal(fromPop = false) {
+    this.closeModal('proModalBackdrop', fromPop);
   },
 
   activatePro() {
@@ -1470,15 +1500,158 @@ const HomeWorkoutApp = {
   },
 
   // ========================================================
+  // SET NEW PASSWORD MODAL (FROM RESET EMAIL LINK)
   // ========================================================
-  // NAVIGATION & TAB SWITCHING
-  // ========================================================
-  goToHome() {
-    this.switchTab('training');
+  openNewPasswordModal() {
+    this.openModal('newPasswordModalBackdrop', 'recovery');
   },
 
-  switchTab(tabId) {
+  closeNewPasswordModal(fromPop = false) {
+    this.closeModal('newPasswordModalBackdrop', fromPop);
+  },
+
+  async submitNewPassword() {
+    const p1 = document.getElementById('newPasswordInput')?.value?.trim();
+    const p2 = document.getElementById('newPasswordConfirmInput')?.value?.trim();
+    const feedback = document.getElementById('newPassFeedback');
+
+    const showMsg = (msg, isErr = true) => {
+      if (!feedback) return;
+      feedback.style.display = 'block';
+      feedback.style.background = isErr ? '#FEE2E2' : '#ECFDF5';
+      feedback.style.color = isErr ? '#B91C1C' : '#047857';
+      feedback.textContent = (isErr ? '⚠️ ' : '✅ ') + msg;
+    };
+
+    if (!p1 || p1.length < 8) {
+      showMsg('Password must be at least 8 characters long.');
+      return;
+    }
+    if (p1 !== p2) {
+      showMsg('Passwords do not match. Please re-enter.');
+      return;
+    }
+
+    const btn = document.getElementById('newPassSubmitBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Updating Password...'; }
+
+    try {
+      await HomeWorkoutStore.updateNewPassword(p1);
+      showMsg('Password updated successfully! Welcome to your account.', false);
+      setTimeout(() => {
+        this.closeNewPasswordModal();
+        this.renderHeader();
+        this.renderWeeklyGoalCard();
+        this.renderBodyFocus();
+        this.renderSettingsScreen();
+        if (btn) { btn.disabled = false; btn.textContent = 'Update Password & Sign In'; }
+      }, 1200);
+    } catch (err) {
+      showMsg(err.message || 'Failed to update password.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Update Password & Sign In'; }
+    }
+  },
+
+  checkForPasswordRecoveryHash() {
+    try {
+      const hash = window.location.hash || '';
+      if (hash.includes('type=recovery') || (hash.includes('access_token=') && hash.includes('refresh_token='))) {
+        // Replace URL cleanly without reloading
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({ tab: 'training' }, '', window.location.pathname);
+        }
+        setTimeout(() => {
+          this.openNewPasswordModal();
+        }, 350);
+      }
+    } catch (e) {}
+  },
+
+  // ========================================================
+  // HTML5 HISTORY & POPSTATE NAVIGATION (MOBILE BACK BUTTON)
+  // ========================================================
+  initNavigation() {
+    if (typeof window === 'undefined' || !window.history) return;
+
+    // Set initial baseline state on launch
+    const initialHash = (window.location.hash || '').replace(/^#/, '');
+    const validTabs = ['training', 'discover', 'report', 'settings'];
+    const activeTab = validTabs.includes(initialHash) ? initialHash : 'training';
+
+    try {
+      window.history.replaceState({ tab: activeTab, screen: activeTab }, '', '#' + activeTab);
+    } catch (e) {}
+
+    window.addEventListener('popstate', (e) => {
+      this.handlePopState(e);
+    });
+  },
+
+  pushNavState(state, title, hash) {
+    if (typeof window === 'undefined' || !window.history) return;
+    try {
+      window.history.pushState(state, title || '', hash || ('#' + (state.tab || state.modal || 'training')));
+    } catch (e) {}
+  },
+
+  handlePopState(event) {
+    // 1. Check if workout runner modal is active
+    const runnerModal = document.getElementById('workoutRunnerModal');
+    if (runnerModal && runnerModal.classList.contains('active')) {
+      if (confirm('Quit current workout session?')) {
+        this.closeWorkoutRunner(true);
+      } else {
+        // Re-push state so user remains inside runner
+        this.pushNavState({ modal: 'workoutRunnerModal' }, 'Workout Runner', '#runner');
+      }
+      return;
+    }
+
+    // 2. Check if any overlay modal is open (close modal, stay on screen)
+    const modalBackdrops = [
+      'authModalBackdrop',
+      'newPasswordModalBackdrop',
+      'levelModalBackdrop',
+      'goalModalBackdrop',
+      'proModalBackdrop',
+      'swapExerciseModalBackdrop'
+    ];
+    for (const id of modalBackdrops) {
+      const modal = document.getElementById(id);
+      if (modal && modal.classList.contains('active')) {
+        this.closeModal(id, true);
+        return;
+      }
+    }
+
+    // 3. Tab switching from browser history
+    if (event.state && event.state.tab) {
+      this.switchTab(event.state.tab, false);
+    } else {
+      if (this.currentTab !== 'training') {
+        this.switchTab('training', false);
+      }
+    }
+  },
+
+  navigateBack() {
+    if (typeof window !== 'undefined' && window.history && window.history.length > 1) {
+      window.history.back();
+    } else {
+      this.goToHome();
+    }
+  },
+
+  goToHome() {
+    this.switchTab('training', true);
+  },
+
+  switchTab(tabId, pushHistory = true) {
     this.currentTab = tabId;
+
+    if (pushHistory) {
+      this.pushNavState({ tab: tabId, screen: tabId }, tabId, '#' + tabId);
+    }
 
     // Update bottom navigation active button
     document.querySelectorAll('.hw-nav-btn').forEach(btn => {
@@ -1771,7 +1944,6 @@ const HomeWorkoutApp = {
   openAuthModal() {
     const user = HomeWorkoutStore.getUser();
     const token = HomeWorkoutStore.getToken();
-    const modal = document.getElementById('authModalBackdrop');
     const loggedInView = document.getElementById('authLoggedInView');
     const formView = document.getElementById('authFormView');
     const usernameEl = document.getElementById('authLoggedInUsername');
@@ -1788,15 +1960,14 @@ const HomeWorkoutApp = {
       this.switchAuthMode('login');
     }
 
-    if (modal) modal.classList.add('active');
+    this.openModal('authModalBackdrop', 'auth');
     if (typeof TelemetryTracker !== 'undefined') {
       TelemetryTracker.trackScreen('auth_modal', this.authMode || 'login');
     }
   },
 
-  closeAuthModal() {
-    const modal = document.getElementById('authModalBackdrop');
-    if (modal) modal.classList.remove('active');
+  closeAuthModal(fromPop = false) {
+    this.closeModal('authModalBackdrop', fromPop);
   },
 
   showAuthFeedback(message, type = 'error') {
@@ -1835,16 +2006,57 @@ const HomeWorkoutApp = {
     const loginBtn = document.getElementById('authTabLoginBtn');
     const regBtn = document.getElementById('authTabRegisterBtn');
     const submitBtn = document.getElementById('authSubmitBtn');
+    const emailGroup = document.getElementById('authEmailGroup');
+    const usernameLabel = document.getElementById('authUsernameLabel');
+    const usernameInput = document.getElementById('authUsernameInput');
+    const forgotLinkWrap = document.getElementById('authForgotLinkWrap');
+    const passwordGroup = document.getElementById('authPasswordGroup');
+    const orGuestWrap = document.getElementById('authOrGuestWrap');
+    const authModalTitle = document.getElementById('authModalTitle');
+
     if (loginBtn) loginBtn.classList.toggle('active', mode === 'login');
     if (regBtn) regBtn.classList.toggle('active', mode === 'register');
-    if (submitBtn) submitBtn.textContent = mode === 'login' ? 'Sign In' : 'Create Account';
+
+    if (mode === 'forgot') {
+      if (authModalTitle) authModalTitle.textContent = 'Reset Password';
+      if (loginBtn) loginBtn.classList.remove('active');
+      if (regBtn) regBtn.classList.remove('active');
+      if (emailGroup) emailGroup.style.display = 'none';
+      if (passwordGroup) passwordGroup.style.display = 'none';
+      if (forgotLinkWrap) forgotLinkWrap.style.display = 'none';
+      if (orGuestWrap) orGuestWrap.style.display = 'none';
+      if (usernameLabel) usernameLabel.textContent = 'Registered Email or Username';
+      if (usernameInput) usernameInput.placeholder = 'you@example.com or athlete_name';
+      if (submitBtn) submitBtn.textContent = 'Send Password Reset Link';
+    } else if (mode === 'register') {
+      if (authModalTitle) authModalTitle.textContent = 'Create Athlete Account';
+      if (emailGroup) emailGroup.style.display = 'block';
+      if (passwordGroup) passwordGroup.style.display = 'block';
+      if (forgotLinkWrap) forgotLinkWrap.style.display = 'none';
+      if (orGuestWrap) orGuestWrap.style.display = 'block';
+      if (usernameLabel) usernameLabel.textContent = 'Athlete Username';
+      if (usernameInput) usernameInput.placeholder = 'e.g. alex_fitness';
+      if (submitBtn) submitBtn.textContent = 'Create Account';
+    } else {
+      // login mode
+      if (authModalTitle) authModalTitle.textContent = 'Sign In to Your Account';
+      if (emailGroup) emailGroup.style.display = 'none';
+      if (passwordGroup) passwordGroup.style.display = 'block';
+      if (forgotLinkWrap) forgotLinkWrap.style.display = 'block';
+      if (orGuestWrap) orGuestWrap.style.display = 'block';
+      if (usernameLabel) usernameLabel.textContent = 'Email or Username';
+      if (usernameInput) usernameInput.placeholder = 'you@example.com or athlete_name';
+      if (submitBtn) submitBtn.textContent = 'Sign In';
+    }
   },
 
   async submitAuthForm() {
     this.clearAuthFeedback();
     const usernameInput = document.getElementById('authUsernameInput');
+    const emailInput = document.getElementById('authEmailInput');
     const passwordInput = document.getElementById('authPasswordInput');
     const u = usernameInput ? usernameInput.value.trim() : '';
+    const email = emailInput ? emailInput.value.trim() : '';
     const p = passwordInput ? passwordInput.value.trim() : '';
 
     const submitBtn = document.getElementById('authSubmitBtn');
@@ -1854,30 +2066,42 @@ const HomeWorkoutApp = {
     }
 
     try {
-      if (this.authMode === 'login') {
+      if (this.authMode === 'forgot') {
+        const target = u;
+        if (!target) {
+          throw new Error('Please enter your email address or username to receive a reset link.');
+        }
+        await HomeWorkoutStore.sendPasswordResetEmail(target);
+        this.showAuthFeedback(`📩 Password reset link sent! Check your email inbox to reset your password.`, 'success');
+      } else if (this.authMode === 'login') {
         await HomeWorkoutStore.login(u, p);
         this.showAuthFeedback(`Welcome back, ${u}! Signed in successfully.`, 'success');
+        setTimeout(() => {
+          this.closeAuthModal();
+          this.renderHeader();
+          this.renderWeeklyGoalCard();
+          this.renderBodyFocus();
+          this.renderSettingsScreen();
+        }, 700);
       } else {
-        await HomeWorkoutStore.register(u, p, this.activeFocusLevel || 'Intermediate');
+        // register mode
+        await HomeWorkoutStore.register(u, email, p, this.activeFocusLevel || 'Intermediate');
         this.showAuthFeedback(`Account created successfully! Welcome, ${u}!`, 'success');
+        setTimeout(() => {
+          this.closeAuthModal();
+          this.renderHeader();
+          this.renderWeeklyGoalCard();
+          this.renderBodyFocus();
+          this.renderSettingsScreen();
+        }, 700);
       }
 
-      if (typeof TelemetryTracker !== 'undefined') {
+      if (typeof TelemetryTracker !== 'undefined' && this.authMode !== 'forgot') {
         TelemetryTracker.trackAuth(this.authMode, u);
       }
-
-      setTimeout(() => {
-        this.closeAuthModal();
-        this.renderHeader();
-        this.renderWeeklyGoalCard();
-        this.renderBodyFocus();
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.style.opacity = '1';
-        }
-      }, 700);
     } catch (err) {
       this.showAuthFeedback(err.message || 'Authentication error. Please check your details.', 'error');
+    } finally {
       if (submitBtn) {
         submitBtn.disabled = false;
         submitBtn.style.opacity = '1';
@@ -1915,6 +2139,29 @@ const HomeWorkoutApp = {
       this.renderHeader();
       this.renderWeeklyGoalCard();
       this.renderBodyFocus();
+      this.renderSettingsScreen();
+    }
+  },
+
+  async promptAccountSecurityUpdate() {
+    const user = HomeWorkoutStore.getUser();
+    const currentEmail = (user.email && !user.email.endsWith('@homeworkout.app')) ? user.email : '';
+    const newEmail = prompt('Enter your recovery email address (used for password reset & cloud sync):', currentEmail);
+    if (newEmail === null) return;
+
+    let newPassword = null;
+    const changePass = confirm('Would you also like to update your account password now?');
+    if (changePass) {
+      newPassword = prompt('Enter your new password (minimum 8 characters):');
+      if (newPassword === null) return;
+    }
+
+    try {
+      await HomeWorkoutStore.updateUserAccount(newEmail, newPassword);
+      alert('✅ Account updated successfully!');
+      this.renderSettingsScreen();
+    } catch (err) {
+      alert('⚠️ ' + err.message);
     }
   },
 
@@ -1923,6 +2170,8 @@ const HomeWorkoutApp = {
     const token = HomeWorkoutStore.getToken();
     const container = document.getElementById('settingsScreenContent');
     if (!container) return;
+
+    const hasRealEmail = user.email && !user.email.endsWith('@homeworkout.app');
 
     container.innerHTML = `
       <!-- User Profile Card -->
@@ -1934,11 +2183,11 @@ const HomeWorkoutApp = {
             </div>
             <div>
               <h4 style="font-weight: 800; font-size: 1rem; color: var(--text-main); margin: 0 0 2px 0;">${user.username ? user.username : 'Guest Athlete'}</h4>
-              <span style="font-size: 0.78rem; color: var(--text-muted);">${token && user.username ? '🟢 Cloud Sync Active' : '⚪ Offline / Guest Session'}</span>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">${token && user.username && !user.isGuest ? '🟢 Cloud Sync Active' : '⚪ Offline / Guest Session'}</span>
             </div>
           </div>
           <button class="level-select-pill" onclick="HomeWorkoutApp.openAuthModal()" style="font-size: 0.78rem; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-            <span>${token && user.username ? 'Account' : 'Sign In'}</span>
+            <span>${token && user.username && !user.isGuest ? 'Account' : 'Sign In'}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
@@ -1948,6 +2197,22 @@ const HomeWorkoutApp = {
 
       <!-- Settings & Controls Card -->
       <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
+        <!-- Account Security / Recovery Row (If Signed In) -->
+        ${token && user.username && !user.isGuest ? `
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
+            <div>
+              <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Account & Recovery Email</h4>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">${hasRealEmail ? '📧 ' + user.email : '⚠️ No recovery email linked'}</span>
+            </div>
+            <button class="level-select-pill" onclick="HomeWorkoutApp.promptAccountSecurityUpdate()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+              <span>${hasRealEmail ? 'Edit' : 'Link Email'}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </button>
+          </div>
+        ` : ''}
+
         <!-- Fitness Level Row -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
           <div>
