@@ -741,14 +741,404 @@ const ExerciseDataset = {
   allExercises: [],
   isLoaded: false,
 
+  // ========================================================
+  // MOVEMENT-PATTERN ARCHITECTURE (MILESTONE 1)
+  // 8 Primary Biomechanical Patterns + Mobility Flow
+  // ========================================================
+  MOVEMENT_PATTERNS: {
+    horizontal_push: {
+      id: 'horizontal_push',
+      name: 'Horizontal Push',
+      icon: '💥',
+      tagline: 'Chest & Tricep Dominant Pressing',
+      description: 'Pressing resistance or bodyweight away from the chest perpendicular to the spine.',
+      primaryMuscles: ['Chest', 'Triceps', 'Front Delts'],
+      secondaryMuscles: ['Core', 'Serratus Anterior'],
+      benchmarks: {
+        beginner: { id: '0662', name: 'Incline Push-Up', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0289', name: 'Barbell Bench Press', equipment: 'Barbell', level: 'Intermediate' },
+        advanced: { id: '0251', name: 'Chest Dips (Parallel Bars)', equipment: 'Body Weight', level: 'Advanced' }
+      }
+    },
+    vertical_push: {
+      id: 'vertical_push',
+      name: 'Vertical Push',
+      icon: '⬆️',
+      tagline: 'Shoulder & Overhead Strength',
+      description: 'Pressing resistance overhead vertically in line with the spinal column.',
+      primaryMuscles: ['Shoulders', 'Triceps', 'Upper Traps'],
+      secondaryMuscles: ['Upper Chest', 'Core'],
+      benchmarks: {
+        beginner: { id: '0340', name: 'Dumbbell Seated Shoulder Press', equipment: 'Dumbbell', level: 'Beginner' },
+        intermediate: { id: '0705', name: 'Standing Barbell Overhead Press', equipment: 'Barbell', level: 'Intermediate' },
+        advanced: { id: '0706', name: 'Pike Push-Up to Handstand', equipment: 'Body Weight', level: 'Advanced' }
+      }
+    },
+    horizontal_pull: {
+      id: 'horizontal_pull',
+      name: 'Horizontal Pull',
+      icon: '🚣',
+      tagline: 'Upper Back & Rhomboids Thickness',
+      description: 'Rowing resistance towards the torso horizontally perpendicular to the chest.',
+      primaryMuscles: ['Upper Back', 'Lats', 'Rhomboids', 'Biceps'],
+      secondaryMuscles: ['Rear Delts', 'Forearms', 'Core'],
+      benchmarks: {
+        beginner: { id: '0049', name: 'Inverted Bodyweight Row', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0292', name: 'One-Arm Dumbbell Row', equipment: 'Dumbbell', level: 'Intermediate' },
+        advanced: { id: '0308', name: 'Bent-Over Barbell Row', equipment: 'Barbell', level: 'Advanced' }
+      }
+    },
+    vertical_pull: {
+      id: 'vertical_pull',
+      name: 'Vertical Pull',
+      icon: '🧗',
+      tagline: 'Lats & V-Taper Pulling Power',
+      description: 'Pulling bodyweight or weight downward from overhead toward the collarbone.',
+      primaryMuscles: ['Lats', 'Biceps', 'Forearms', 'Rear Delts'],
+      secondaryMuscles: ['Rhomboids', 'Grip', 'Core'],
+      benchmarks: {
+        beginner: { id: '0150', name: 'Resistance Band Lat Pulldown', equipment: 'Band', level: 'Beginner' },
+        intermediate: { id: '0254', name: 'Wide-Grip Lat Pulldown', equipment: 'Cable', level: 'Intermediate' },
+        advanced: { id: '0652', name: 'Strict Bodyweight Pull-Up', equipment: 'Body Weight', level: 'Advanced' }
+      }
+    },
+    squat: {
+      id: 'squat',
+      name: 'Squat',
+      icon: '🦵',
+      tagline: 'Knee-Dominant Quad & Glute Power',
+      description: 'Bilateral knee-dominant lower body flexion and extension with upright torso.',
+      primaryMuscles: ['Quadriceps', 'Glutes', 'Calves'],
+      secondaryMuscles: ['Hamstrings', 'Core', 'Adductors'],
+      benchmarks: {
+        beginner: { id: '0043', name: 'Bodyweight Air Squat', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0810', name: 'Goblet Squat (Dumbbell)', equipment: 'Dumbbell', level: 'Intermediate' },
+        advanced: { id: '0334', name: 'Barbell Back Squat', equipment: 'Barbell', level: 'Advanced' }
+      }
+    },
+    hinge: {
+      id: 'hinge',
+      name: 'Hinge',
+      icon: '⚡',
+      tagline: 'Hip-Dominant Posterior Chain',
+      description: 'Hip-dominant posterior chain extension with minimal knee bend.',
+      primaryMuscles: ['Hamstrings', 'Glutes', 'Lower Back'],
+      secondaryMuscles: ['Lats', 'Traps', 'Core'],
+      benchmarks: {
+        beginner: { id: '1422', name: 'Pelvic Glute Bridge', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0380', name: 'Dumbbell Romanian Deadlift', equipment: 'Dumbbell', level: 'Intermediate' },
+        advanced: { id: '0032', name: 'Barbell Conventional Deadlift', equipment: 'Barbell', level: 'Advanced' }
+      }
+    },
+    lunge: {
+      id: 'lunge',
+      name: 'Lunge & Split',
+      icon: '🚶',
+      tagline: 'Unilateral Symmetry & Balance',
+      description: 'Unilateral and split-stance knee and hip flexion for athletic balance and stability.',
+      primaryMuscles: ['Quadriceps', 'Glutes', 'Adductors', 'Calves'],
+      secondaryMuscles: ['Hamstrings', 'Core Stabilizers'],
+      benchmarks: {
+        beginner: { id: '0336', name: 'Bodyweight Step-Up', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0812', name: 'Walking Dumbbell Lunge', equipment: 'Dumbbell', level: 'Intermediate' },
+        advanced: { id: '3769', name: 'Bulgarian Split Squat', equipment: 'Dumbbell', level: 'Advanced' }
+      }
+    },
+    carry_core: {
+      id: 'carry_core',
+      name: 'Core & Carry',
+      icon: '🛡️',
+      tagline: 'Isometric Trunk & Anti-Rotation',
+      description: 'Loaded carries, isometric core stability, and anti-extension trunk strength.',
+      primaryMuscles: ['Abs', 'Obliques', 'Deep Core', 'Grip'],
+      secondaryMuscles: ['Lower Back', 'Hip Flexors', 'Traps'],
+      benchmarks: {
+        beginner: { id: '0464', name: 'Forearm Plank', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0001', name: '3/4 Sit-Up / Crunch', equipment: 'Body Weight', level: 'Intermediate' },
+        advanced: { id: '0630', name: 'Hanging Leg Raise / Rollout', equipment: 'Body Weight', level: 'Advanced' }
+      }
+    },
+    mobility: {
+      id: 'mobility',
+      name: 'Mobility & Flow',
+      icon: '🧘',
+      tagline: 'Joint Health & Dynamic Warmup',
+      description: 'Active dynamic warmup flows, thoracic opening, and joint mobility.',
+      primaryMuscles: ['Hips', 'Spine', 'Shoulders', 'Full Body'],
+      secondaryMuscles: ['Ankles', 'Thoracic Spine'],
+      benchmarks: {
+        beginner: { id: '3543', name: 'Dynamic Joint Prep Flow', equipment: 'Body Weight', level: 'Beginner' },
+        intermediate: { id: '0870', name: 'World Greatest Stretch', equipment: 'Body Weight', level: 'Intermediate' },
+        advanced: { id: '3147', name: 'Thoracic & Hip 90/90 Opener', equipment: 'Body Weight', level: 'Advanced' }
+      }
+    }
+  },
+
+  EQUIPMENT_TIERS: {
+    bodyweight: { id: 'bodyweight', name: 'Bodyweight & Calisthenics', icon: '🤸', isPro: false },
+    dumbbell: { id: 'dumbbell', name: 'Dumbbells', icon: '🏋️', isPro: false },
+    bands: { id: 'bands', name: 'Resistance Bands', icon: '🎗️', isPro: false },
+    barbell: { id: 'barbell', name: 'Barbell & Plates', icon: '⚡', isPro: true },
+    cable: { id: 'cable', name: 'Cable Tower', icon: '🪢', isPro: true },
+    machine: { id: 'machine', name: 'Machines & Leverage', icon: '⚙️', isPro: true },
+    kettlebell: { id: 'kettlebell', name: 'Kettlebells', icon: '🔔', isPro: true },
+    accessories: { id: 'accessories', name: 'Accessories & Rollers', icon: '🎯', isPro: false }
+  },
+
+  LOCATION_PRESETS: {
+    home: {
+      id: 'home',
+      name: 'Home Gym',
+      icon: '🏠',
+      equipment: ['bodyweight', 'dumbbell', 'bands', 'accessories'],
+      description: 'Dumbbells, bands, floor, pull-up bar'
+    },
+    gym: {
+      id: 'gym',
+      name: 'Commercial Gym',
+      icon: '🏋️',
+      equipment: ['bodyweight', 'dumbbell', 'barbell', 'cable', 'machine', 'bands', 'kettlebell', 'accessories'],
+      description: 'Full rack, barbells, cables, and machines'
+    },
+    hotel: {
+      id: 'hotel',
+      name: 'Hotel / Travel',
+      icon: '🏨',
+      equipment: ['bodyweight', 'dumbbell', 'bands'],
+      description: 'Bodyweight and travel dumbbells only'
+    }
+  },
+
+  // Helper: Infer pattern if not explicitly tagged
+  inferPattern(ex) {
+    if (!ex) return 'carry_core';
+    if (ex.movement_pattern) return ex.movement_pattern;
+
+    const name = (ex.name || '').toLowerCase();
+    const target = (ex.target || '').toLowerCase();
+    const muscle = (ex.muscle || ex.category || '').toLowerCase();
+    if (ex.isWarmup || muscle === 'warmup') return 'mobility';
+
+    if (name.includes('plank') || name.includes('carry') || name.includes('crunch') || name.includes('sit-up') || name.includes('deadbug') || name.includes('russian twist') || name.includes('rollout') || name.includes('leg raise') || target.includes('abs') || muscle.includes('abs') || muscle.includes('core')) {
+      return 'carry_core';
+    }
+    if (name.includes('lunge') || name.includes('split squat') || name.includes('step-up') || name.includes('curtsey') || name.includes('pistol')) {
+      return 'lunge';
+    }
+    if (name.includes('squat') || name.includes('leg press') || name.includes('hack squat') || target.includes('quad')) {
+      return 'squat';
+    }
+    if (name.includes('deadlift') || name.includes('rdl') || name.includes('swing') || name.includes('hip thrust') || name.includes('glute bridge') || target.includes('glute') || target.includes('hamstring')) {
+      return 'hinge';
+    }
+    if (name.includes('pull-up') || name.includes('chin-up') || name.includes('pulldown') || name.includes('pullover')) {
+      return 'vertical_pull';
+    }
+    if (name.includes('row') || name.includes('face pull') || name.includes('shrug') || target.includes('upper back') || target.includes('lat') || muscle.includes('back')) {
+      return 'horizontal_pull';
+    }
+    if (name.includes('overhead') || name.includes('shoulder press') || name.includes('military') || name.includes('arnold') || name.includes('pike') || target.includes('delt') || muscle.includes('shoulder')) {
+      return 'vertical_push';
+    }
+    if (name.includes('bench') || name.includes('push-up') || name.includes('pushup') || name.includes('chest press') || name.includes('dip') || target.includes('pectoral') || muscle.includes('chest')) {
+      return 'horizontal_push';
+    }
+    if (target.includes('tricep') || name.includes('tricep')) return 'horizontal_push';
+    if (target.includes('bicep') || name.includes('bicep')) return 'horizontal_pull';
+
+    if (muscle.includes('leg')) return 'squat';
+    if (muscle.includes('chest')) return 'horizontal_push';
+    if (muscle.includes('back')) return 'horizontal_pull';
+    if (muscle.includes('shoulder')) return 'vertical_push';
+    return 'carry_core';
+  },
+
+  getMovementPatterns() {
+    return Object.values(this.MOVEMENT_PATTERNS);
+  },
+
+  getPattern(patternId) {
+    return this.MOVEMENT_PATTERNS[patternId] || null;
+  },
+
+  queryByPattern(patternId, { location = 'All', equipment = 'All', level = 'All', isPro = null, search = '', limit = 50 } = {}) {
+    let source = this.allExercises;
+    if (!source || source.length === 0) {
+      const fallback = [];
+      if (this.bodyFocus) Object.values(this.bodyFocus).forEach(list => fallback.push(...list));
+      if (this.challenges) Object.values(this.challenges).forEach(list => fallback.push(...list));
+      source = fallback;
+    }
+
+    let results = source.filter(x => {
+      const p = x.movement_pattern || this.inferPattern(x);
+      return p === patternId;
+    });
+
+    if (location && location !== 'All') {
+      const locKey = location.toLowerCase();
+      const allowedEq = this.LOCATION_PRESETS[locKey] ? this.LOCATION_PRESETS[locKey].equipment : null;
+      if (allowedEq) {
+        results = results.filter(x => allowedEq.includes(x.equipment_tier || 'bodyweight'));
+      }
+    }
+
+    if (equipment && equipment !== 'All') {
+      const eqKey = equipment.toLowerCase();
+      results = results.filter(x => (x.equipment_tier || '').toLowerCase() === eqKey || (x.equipment || '').toLowerCase().includes(eqKey));
+    }
+
+    if (level && level !== 'All') {
+      results = results.filter(x => (x.level || '').toLowerCase() === level.toLowerCase());
+    }
+
+    if (isPro !== null && isPro !== undefined) {
+      results = results.filter(x => Boolean(x.is_pro) === Boolean(isPro));
+    }
+
+    if (search && search.trim()) {
+      const q = search.toLowerCase().trim();
+      results = results.filter(x => (x.name && x.name.toLowerCase().includes(q)) || (x.target && x.target.toLowerCase().includes(q)));
+    }
+
+    return results.slice(0, limit);
+  },
+
+  resolveSwap({ currentExercise, targetLocation = 'home', targetEquipment = null, preserveVolume = true }) {
+    if (!currentExercise) return null;
+
+    const pattern = currentExercise.movement_pattern || this.inferPattern(currentExercise);
+    const locKey = (targetLocation || 'home').toLowerCase();
+    const availableEquipment = targetEquipment || (this.LOCATION_PRESETS[locKey] ? this.LOCATION_PRESETS[locKey].equipment : ['bodyweight', 'dumbbell', 'bands']);
+
+    let candidates = (this.allExercises || []).filter(ex => {
+      const exPattern = ex.movement_pattern || this.inferPattern(ex);
+      if (exPattern !== pattern) return false;
+      if (String(ex.id) === String(currentExercise.id)) return false;
+
+      const exEquip = ex.equipment_tier || 'bodyweight';
+      return availableEquipment.includes(exEquip);
+    });
+
+    if (candidates.length === 0) {
+      const fallbackList = [];
+      if (this.challenges) Object.values(this.challenges).forEach(list => fallbackList.push(...list));
+      candidates = fallbackList.filter(ex => {
+        const exPattern = this.inferPattern(ex);
+        return exPattern === pattern && String(ex.id) !== String(currentExercise.id);
+      });
+    }
+
+    if (candidates.length === 0) {
+      return {
+        pattern: pattern,
+        original: currentExercise,
+        primary: currentExercise,
+        alternatives: [],
+        volumeRecommendation: 'Maintain standard 3 sets × 10-12 reps.'
+      };
+    }
+
+    const targetTier = currentExercise.progression_tier || 2;
+    candidates.sort((a, b) => {
+      const diffA = Math.abs((a.progression_tier || 2) - targetTier);
+      const diffB = Math.abs((b.progression_tier || 2) - targetTier);
+      return diffA - diffB;
+    });
+
+    const primary = candidates[0];
+    const alternatives = candidates.slice(1, 5);
+
+    let volumeNote = 'Equivalent load: 3 sets × 8-12 reps';
+    if ((currentExercise.equipment_tier === 'barbell' || currentExercise.equipment_tier === 'machine') && primary.equipment_tier === 'bodyweight') {
+      volumeNote = 'Bodyweight equivalent: 3-4 sets × 15-20 reps to match progressive mechanical tension.';
+    } else if (currentExercise.equipment_tier === 'machine' && primary.equipment_tier === 'dumbbell') {
+      volumeNote = 'Free weight compensation: 3 sets × 10-12 reps with controlled 3s eccentric tempo.';
+    } else if (primary.equipment_tier === 'bands') {
+      volumeNote = 'Resistance band compensation: 3 sets × 15-20 reps with 2s peak contraction hold.';
+    }
+
+    return {
+      pattern: pattern,
+      original: currentExercise,
+      primary: primary,
+      alternatives: alternatives,
+      volumeRecommendation: volumeNote
+    };
+  },
+
+  getProgression(exerciseId, direction = 'harder') {
+    const ex = (this.allExercises || []).find(e => String(e.id) === String(exerciseId));
+    if (!ex) return null;
+
+    const pattern = ex.movement_pattern || this.inferPattern(ex);
+    const currentTier = ex.progression_tier || 2;
+    const targetTier = direction === 'harder' ? Math.min(3, currentTier + 1) : Math.max(1, currentTier - 1);
+
+    const matches = (this.allExercises || []).filter(e => {
+      const p = e.movement_pattern || this.inferPattern(e);
+      return p === pattern && (e.progression_tier || 2) === targetTier && String(e.id) !== String(ex.id);
+    });
+
+    return matches.length > 0 ? matches[0] : null;
+  },
+
+  getBenchmarkRoutines() {
+    return [
+      {
+        id: 'hybrid_full_body_foundation',
+        title: 'Full Body Movement-Pattern Foundation',
+        level: 'Intermediate',
+        duration_minutes: 35,
+        slots: [
+          { slot: 1, pattern: 'horizontal_push', target: '3 sets × 8-12 reps', defaultExerciseId: '0289', name: 'Bench Press / Push-Up' },
+          { slot: 2, pattern: 'horizontal_pull', target: '3 sets × 8-12 reps', defaultExerciseId: '0292', name: 'One-Arm Dumbbell Row' },
+          { slot: 3, pattern: 'squat', target: '3 sets × 10-15 reps', defaultExerciseId: '0810', name: 'Goblet Squat' },
+          { slot: 4, pattern: 'hinge', target: '3 sets × 10-12 reps', defaultExerciseId: '0380', name: 'Romanian Deadlift' },
+          { slot: 5, pattern: 'carry_core', target: '3 sets × 45s', defaultExerciseId: '0464', name: 'Plank with Core Twist' }
+        ]
+      },
+      {
+        id: 'upper_body_pattern_hypertrophy',
+        title: 'Upper Body Pattern Hypertrophy',
+        level: 'Intermediate',
+        duration_minutes: 30,
+        slots: [
+          { slot: 1, pattern: 'horizontal_push', target: '3 sets × 8-10 reps', defaultExerciseId: '0289', name: 'Barbell Bench Press' },
+          { slot: 2, pattern: 'vertical_push', target: '3 sets × 10-12 reps', defaultExerciseId: '0340', name: 'Dumbbell Shoulder Press' },
+          { slot: 3, pattern: 'horizontal_pull', target: '3 sets × 10-12 reps', defaultExerciseId: '0308', name: 'Bent-Over Row' },
+          { slot: 4, pattern: 'vertical_pull', target: '3 sets × 8-12 reps', defaultExerciseId: '0254', name: 'Lat Pulldown / Pull-Up' },
+          { slot: 5, pattern: 'carry_core', target: '3 sets × 15 reps', defaultExerciseId: '0001', name: '3/4 Sit-Up Core Crunch' }
+        ]
+      },
+      {
+        id: 'lower_body_athletic_power',
+        title: 'Lower Body & Hip Athletic Power',
+        level: 'Intermediate',
+        duration_minutes: 32,
+        slots: [
+          { slot: 1, pattern: 'squat', target: '4 sets × 8-12 reps', defaultExerciseId: '0334', name: 'Barbell / Goblet Squat' },
+          { slot: 2, pattern: 'hinge', target: '3 sets × 10-12 reps', defaultExerciseId: '0032', name: 'Romanian Deadlift' },
+          { slot: 3, pattern: 'lunge', target: '3 sets × 10 reps / leg', defaultExerciseId: '3769', name: 'Bulgarian Split Squat' },
+          { slot: 4, pattern: 'carry_core', target: '3 sets × 15 reps', defaultExerciseId: '0630', name: 'Mountain Climbers' },
+          { slot: 5, pattern: 'mobility', target: '2 sets × 60s', defaultExerciseId: '3543', name: 'Dynamic Joint Flow' }
+        ]
+      }
+    ];
+  },
+
   async loadFullDatabase() {
     try {
-      const res = await fetch('data/exercises_database.json');
+      const dataUrl = (typeof window !== 'undefined' && window.location.pathname.includes('/homeworkout-app'))
+        ? '/homeworkout-app/data/exercises_database.json'
+        : 'data/exercises_database.json';
+      let res = await fetch(dataUrl);
+      if (!res.ok) res = await fetch('data/exercises_database.json');
       if (res.ok) {
         this.allExercises = await res.json();
         this.isLoaded = true;
-        console.log(`[ExerciseDataset] Loaded ${this.allExercises.length} verified exercises with muscle & location data.`);
-        if (typeof window !== 'undefined' && window.HomeWorkoutApp) {
+        console.log(`[ExerciseDataset] Loaded ${this.allExercises.length} verified exercises with movement patterns & equipment data.`);
+        if (typeof window !== 'undefined' && window.HomeWorkoutApp && window.HomeWorkoutApp.onDatabaseLoaded) {
           window.HomeWorkoutApp.onDatabaseLoaded();
         }
       }
@@ -757,7 +1147,7 @@ const ExerciseDataset = {
     }
   },
 
-  queryExercises({ muscle = 'All', location = 'All', level = 'All', isWarmup = false, search = '', limit = 50 } = {}) {
+  queryExercises({ muscle = 'All', pattern = 'All', location = 'All', equipment = 'All', level = 'All', isPro = null, isWarmup = false, search = '', limit = 50 } = {}) {
     let source = this.allExercises;
 
     // Fallback if full database has not loaded yet
@@ -770,11 +1160,15 @@ const ExerciseDataset = {
 
     let results = source;
 
+    // Filter by Movement Pattern
+    if (pattern && pattern !== 'All') {
+      results = results.filter(x => (x.movement_pattern || this.inferPattern(x)) === pattern);
+    }
+
     // Filter by Warmup
     if (isWarmup || muscle === 'Warmup') {
-      results = results.filter(x => x.isWarmup || x.muscle === 'Warmup');
+      results = results.filter(x => x.isWarmup || x.muscle === 'Warmup' || (x.movement_pattern || this.inferPattern(x)) === 'mobility');
     } else if (muscle && muscle !== 'All') {
-      // Normal Muscle Filter (Chest, Arms, Shoulders, Back, Abs & Core, Legs)
       const mNorm = muscle.toLowerCase();
       results = results.filter(x => {
         const xMuscle = (x.muscle || '').toLowerCase();
@@ -789,14 +1183,31 @@ const ExerciseDataset = {
       });
     }
 
-    // Filter by Location: Home vs Gym
+    // Filter by Location: Home vs Gym vs Hotel
     if (location && location !== 'All') {
-      results = results.filter(x => x.location === location);
+      const locKey = location.toLowerCase();
+      const preset = this.LOCATION_PRESETS[locKey];
+      if (preset && preset.equipment) {
+        results = results.filter(x => preset.equipment.includes(x.equipment_tier || 'bodyweight'));
+      } else {
+        results = results.filter(x => x.location === location);
+      }
     }
 
-    // Filter by Level: Beginner, Intermediate, Advanced
+    // Filter by Equipment
+    if (equipment && equipment !== 'All') {
+      const eqKey = equipment.toLowerCase();
+      results = results.filter(x => (x.equipment_tier || '').toLowerCase() === eqKey || (x.equipment || '').toLowerCase().includes(eqKey));
+    }
+
+    // Filter by Level
     if (level && level !== 'All') {
-      results = results.filter(x => x.level === level);
+      results = results.filter(x => (x.level || '').toLowerCase() === level.toLowerCase());
+    }
+
+    // Filter by Free vs Pro
+    if (isPro !== null && isPro !== undefined) {
+      results = results.filter(x => Boolean(x.is_pro) === Boolean(isPro));
     }
 
     // Filter by Search Query
@@ -807,6 +1218,7 @@ const ExerciseDataset = {
         (x.target && x.target.toLowerCase().includes(q)) ||
         (x.equipment && x.equipment.toLowerCase().includes(q)) ||
         (x.muscle && x.muscle.toLowerCase().includes(q)) ||
+        (x.movement_pattern && x.movement_pattern.toLowerCase().includes(q)) ||
         (x.level && x.level.toLowerCase().includes(q))
       );
     }

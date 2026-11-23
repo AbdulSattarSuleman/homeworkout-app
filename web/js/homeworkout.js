@@ -10,7 +10,8 @@ const HomeWorkoutApp = {
   
   // Exercise Explorer State
   directoryMode: 'challenges', // 'challenges' | 'library'
-  explorerLocation: 'All', // 'All' | 'Home' | 'Gym'
+  explorerLocation: 'All', // 'All' | 'Home' | 'Gym' | 'Hotel'
+  explorerPattern: 'All', // 'All' | 'horizontal_push' | 'vertical_push' | ...
   explorerMuscle: 'All', // 'All' | 'Chest' | 'Warmup' | 'Abs' | 'Arms' | 'Legs' | 'Shoulders' | 'Back'
   explorerLevel: 'All', // 'All' | 'Beginner' | 'Intermediate' | 'Advanced'
   explorerSearch: '',
@@ -499,6 +500,24 @@ const HomeWorkoutApp = {
     const listContainer = document.getElementById('swapOptionsList');
     if (!listContainer) return;
 
+    const currentEx = (this.currentDailyRoutine && this.currentDailyRoutine.exercises)
+      ? this.currentDailyRoutine.exercises[this.swapTargetIndex]
+      : null;
+
+    let swapResult = null;
+    let patObj = null;
+    if (currentEx && typeof ExerciseDataset !== 'undefined') {
+      const patternId = currentEx.movement_pattern || ExerciseDataset.inferPattern(currentEx);
+      patObj = ExerciseDataset.getPattern(patternId);
+      if (ExerciseDataset.resolveSwap) {
+        swapResult = ExerciseDataset.resolveSwap({
+          currentExercise: currentEx,
+          targetLocation: this.activeFocusLocation,
+          preserveVolume: true
+        });
+      }
+    }
+
     const candidates = this.getAvailableSwapCandidates();
 
     if (candidates.length === 0) {
@@ -511,24 +530,45 @@ const HomeWorkoutApp = {
       return;
     }
 
-    listContainer.innerHTML = candidates.map(cand => `
-      <div class="swap-option-card" onclick="HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
-        <div class="swap-option-left">
-          <img class="swap-option-thumb" src="${cand.thumbnailUrl}" alt="${cand.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'44\\' height=\\'44\\' viewBox=\\'0 0 44 44\\'><rect width=\\'44\\' height=\\'44\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'18\\'>💪</text></svg>'">
-          <div class="swap-option-info">
-            <div class="swap-option-title">${cand.name}</div>
-            <div class="swap-option-meta">
-              <span>🎯 ${cand.target || cand.muscle}</span>
-              ${cand.equipment ? ` • <span>${cand.equipment}</span>` : ''}
-              ${cand.level ? ` • <span>${cand.level}</span>` : ''}
+    const bannerHtml = swapResult ? `
+      <div style="background: rgba(0, 82, 255, 0.08); border: 1px solid rgba(0, 82, 255, 0.2); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+        <div style="font-size: 0.72rem; font-weight: 800; color: var(--brand-blue); text-transform: uppercase;">
+          ${patObj ? patObj.icon : '⚡'} Movement Pattern: ${patObj ? patObj.name : 'Target Pattern'}
+        </div>
+        <div style="font-size: 0.74rem; color: #4B5563; margin-top: 2px;">
+          💡 ${swapResult.volumeRecommendation}
+        </div>
+      </div>
+    ` : '';
+
+    listContainer.innerHTML = bannerHtml + candidates.map(cand => {
+      const patternId = cand.movement_pattern || (typeof ExerciseDataset !== 'undefined' ? ExerciseDataset.inferPattern(cand) : null);
+      const candPat = (patternId && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getPattern) ? ExerciseDataset.getPattern(patternId) : null;
+      const patBadge = candPat ? `<span style="background: rgba(0, 82, 255, 0.08); color: var(--brand-blue); font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${candPat.icon} ${candPat.name}</span>` : '';
+      const proBadge = cand.is_pro ? '<span style="background: #FEF3C7; color: #D97706; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">👑 PRO</span>' : '';
+
+      return `
+        <div class="swap-option-card" onclick="HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
+          <div class="swap-option-left">
+            <img class="swap-option-thumb" src="${cand.thumbnailUrl}" alt="${cand.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'44\\' height=\\'44\\' viewBox=\\'0 0 44 44\\'><rect width=\\'44\\' height=\\'44\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'18\\'>💪</text></svg>'">
+            <div class="swap-option-info">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <div class="swap-option-title">${cand.name}</div>
+                ${proBadge}
+              </div>
+              <div class="swap-option-meta" style="margin-top: 3px;">
+                ${patBadge}
+                <span>🎯 ${cand.target || cand.muscle}</span>
+                ${cand.equipment ? ` • <span>${cand.equipment}</span>` : ''}
+              </div>
             </div>
           </div>
+          <button class="swap-select-btn" onclick="event.stopPropagation(); HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
+            Choose ➔
+          </button>
         </div>
-        <button class="swap-select-btn" onclick="event.stopPropagation(); HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
-          Choose ➔
-        </button>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   },
 
   findExerciseObject(id) {
@@ -725,6 +765,11 @@ const HomeWorkoutApp = {
     this.renderExplorer();
   },
 
+  filterExplorerPattern(pattern) {
+    this.explorerPattern = pattern;
+    this.renderExplorer();
+  },
+
   filterExplorerMuscle(muscle) {
     this.explorerMuscle = muscle;
     this.renderExplorer();
@@ -747,7 +792,21 @@ const HomeWorkoutApp = {
       });
     }
 
-    // 3. Render Muscle Pills
+    // 3. Render Movement Pattern Filter Pills (Milestone 1)
+    const patternRow = document.getElementById('explorerPatternPills');
+    if (patternRow && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getMovementPatterns) {
+      const patterns = [
+        { id: 'All', name: 'All Patterns', icon: '⚡' },
+        ...ExerciseDataset.getMovementPatterns().map(p => ({ id: p.id, name: p.name, icon: p.icon }))
+      ];
+      patternRow.innerHTML = patterns.map(p => `
+        <button class="exp-filter-pill ${this.explorerPattern === p.id ? 'active' : ''}" onclick="HomeWorkoutApp.filterExplorerPattern('${p.id}')">
+          ${p.icon} ${p.name}
+        </button>
+      `).join('');
+    }
+
+    // 4. Render Muscle Pills
     const pillsRow = document.getElementById('explorerMusclePills');
     if (pillsRow) {
       const muscles = [
@@ -768,7 +827,7 @@ const HomeWorkoutApp = {
       `).join('');
     }
 
-    // 4. Query exercises
+    // 5. Query exercises
     const stack = document.getElementById('explorerExercisesStack');
     const countEl = document.getElementById('explorerResultsCount');
     if (!stack) return;
@@ -776,6 +835,7 @@ const HomeWorkoutApp = {
     let exercises = [];
     if (typeof ExerciseDataset !== 'undefined' && ExerciseDataset.queryExercises) {
       exercises = ExerciseDataset.queryExercises({
+        pattern: this.explorerPattern,
         muscle: this.explorerMuscle,
         location: this.explorerLocation,
         level: this.explorerLevel,
@@ -785,16 +845,17 @@ const HomeWorkoutApp = {
     }
 
     if (countEl) {
-      const locText = this.explorerLocation === 'All' ? 'All Environments' : (this.explorerLocation === 'Home' ? 'Home' : 'Gym');
+      const locText = this.explorerLocation === 'All' ? 'All Environments' : (this.explorerLocation === 'Home' ? 'Home Gym' : (this.explorerLocation === 'Hotel' ? 'Hotel' : 'Gym'));
       const lvlText = this.explorerLevel === 'All' ? 'All Levels' : `${this.explorerLevel}`;
-      countEl.innerHTML = `Showing <strong style="color: var(--brand-blue);">${exercises.length}</strong> exercises • <span>${this.explorerMuscle}</span> • <span>${lvlText}</span> <span>(${locText})</span>`;
+      const patText = this.explorerPattern === 'All' ? '' : ` • <strong>${this.explorerPattern.replace(/_/g, ' ').toUpperCase()}</strong>`;
+      countEl.innerHTML = `Showing <strong style="color: var(--brand-blue);">${exercises.length}</strong> exercises • <span>${this.explorerMuscle}</span>${patText} • <span>${lvlText}</span> <span>(${locText})</span>`;
     }
 
     if (exercises.length === 0) {
       stack.innerHTML = `
         <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
           <p style="font-size: 1rem; font-weight: 700;">No exercises match your filters</p>
-          <p style="font-size: 0.82rem;">Try switching from Home to Gym or clearing the search keyword.</p>
+          <p style="font-size: 0.82rem;">Try switching environment or clearing movement pattern filter.</p>
         </div>
       `;
       return;
@@ -804,18 +865,25 @@ const HomeWorkoutApp = {
       const lvl = ex.level || 'Intermediate';
       const lvlClass = lvl.toLowerCase();
       const lvlIcon = lvl === 'Beginner' ? '🟢' : (lvl === 'Advanced' ? '🔴' : '🟡');
+      const patternId = ex.movement_pattern || (typeof ExerciseDataset !== 'undefined' ? ExerciseDataset.inferPattern(ex) : null);
+      const patObj = (patternId && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getPattern) ? ExerciseDataset.getPattern(patternId) : null;
+      const patternBadge = patObj ? `<span style="background: rgba(0, 82, 255, 0.08); color: var(--brand-blue); font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${patObj.icon} ${patObj.name}</span>` : '';
+      const proBadge = ex.is_pro ? '<span style="background: #FEF3C7; color: #D97706; font-size: 0.65rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">👑 PRO</span>' : '';
+
       return `
         <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
           <div class="fw-left-wrap">
             <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'54\\' height=\\'54\\' viewBox=\\'0 0 54 54\\'><rect width=\\'54\\' height=\\'54\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
             <div class="fw-info-wrap">
-              <h4 class="fw-title">${ex.name}</h4>
-              <div class="fw-meta">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <h4 class="fw-title" style="margin: 0;">${ex.name}</h4>
+                ${proBadge}
+              </div>
+              <div class="fw-meta" style="margin-top: 4px;">
+                ${patternBadge}
                 <span class="level-tag ${lvlClass}">${lvlIcon} ${lvl}</span>
                 <span>•</span>
                 <span>🎯 ${ex.target || ex.muscle}</span>
-                <span>•</span>
-                <span style="color: ${ex.location === 'Home' ? '#10B981' : '#0052FF'}; font-weight: 700;">${ex.location === 'Home' ? '🏠 Home' : '🏋️ Gym'}</span>
                 <span>•</span>
                 <span>${ex.equipment}</span>
               </div>

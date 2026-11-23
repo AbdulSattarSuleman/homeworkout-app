@@ -267,6 +267,7 @@ const HomeWorkoutStore = {
           user.isPro = Boolean(profile.is_pro);
           user.weeklyGoalTarget = Number(profile.weekly_goal_target) || 5;
           user.weeklyCompletedCount = Number(profile.weekly_completed_count) || 0;
+          user.activeLocationId = profile.active_location_id || user.activeLocationId || 'home';
           user.createdAt = profile.created_at || user.createdAt;
         } else {
           // Profile row doesn't exist yet in Supabase profiles table! Auto-create it now:
@@ -284,6 +285,7 @@ const HomeWorkoutStore = {
             streak_count: user.streakCount || 0,
             weekly_goal_target: user.weeklyGoalTarget || 5,
             weekly_completed_count: user.weeklyCompletedCount || 0,
+            active_location_id: user.activeLocationId || 'home',
             created_at: verifiedUser.created_at || nowIso,
             updated_at: nowIso
           }).catch(e => console.warn('[Supabase] Auto-create profile notice:', e));
@@ -432,6 +434,7 @@ const HomeWorkoutStore = {
             streak_count: user.streakCount || 0,
             weekly_goal_target: user.weeklyGoalTarget || 5,
             weekly_completed_count: user.weeklyCompletedCount || 0,
+            active_location_id: user.activeLocationId || 'home',
             updated_at: new Date().toISOString()
           }).then(() => {}).catch(err => console.warn('[Supabase] profile sync notice:', err));
         } else {
@@ -445,6 +448,7 @@ const HomeWorkoutStore = {
                 streak_count: user.streakCount || 0,
                 weekly_goal_target: user.weeklyGoalTarget || 5,
                 weekly_completed_count: user.weeklyCompletedCount || 0,
+                active_location_id: user.activeLocationId || 'home',
                 updated_at: new Date().toISOString()
               }).then(() => {}).catch(err => console.warn('[Supabase] profile sync notice:', err));
             }
@@ -537,6 +541,7 @@ const HomeWorkoutStore = {
       fitnessLevel: 'Intermediate', // 'Beginner' | 'Intermediate' | 'Advanced'
       streakCount: 0,
       isPro: false,
+      activeLocationId: 'home',
       weeklyGoalTarget: 5,
       weeklyCompletedCount: 0,
       activeWeekDays: [16, 17, 18, 19, 20, 21, 22],
@@ -1077,6 +1082,64 @@ const HomeWorkoutStore = {
   getUserLevel() {
     const user = this.getUser();
     return user.fitnessLevel || 'Intermediate';
+  },
+
+  getActiveLocation() {
+    const user = this.getUser();
+    return user.activeLocationId || 'home';
+  },
+
+  setActiveLocation(locationId) {
+    const user = this.getUser();
+    user.activeLocationId = locationId;
+    this.saveUser(user);
+    return user;
+  },
+
+  getPatternBasedRoutine({ routineId = 'hybrid_full_body_foundation', location = null, level = null } = {}) {
+    const user = this.getUser();
+    const effectiveLoc = location || user.activeLocationId || 'home';
+    const effectiveLevel = level || user.fitnessLevel || 'Intermediate';
+
+    let templates = [];
+    if (typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getBenchmarkRoutines) {
+      templates = ExerciseDataset.getBenchmarkRoutines();
+    }
+    const routine = (templates || []).find(r => r.id === routineId) || (templates ? templates[0] : null);
+    if (!routine) return null;
+
+    const resolvedExercises = (routine.slots || []).map(slot => {
+      let ex = null;
+      if (typeof ExerciseDataset !== 'undefined' && ExerciseDataset.queryByPattern) {
+        const matches = ExerciseDataset.queryByPattern(slot.pattern, {
+          location: effectiveLoc,
+          level: effectiveLevel,
+          limit: 10
+        });
+        if (matches && matches.length > 0) {
+          ex = matches[0];
+        }
+      }
+      if (!ex && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.allExercises) {
+        ex = ExerciseDataset.allExercises.find(e => String(e.id) === String(slot.defaultExerciseId));
+      }
+      return ex || {
+        id: slot.defaultExerciseId,
+        name: slot.name,
+        pattern: slot.pattern,
+        reps: slot.target
+      };
+    });
+
+    return {
+      id: routine.id,
+      title: routine.title,
+      location: effectiveLoc,
+      level: effectiveLevel,
+      duration_minutes: routine.duration_minutes || 30,
+      slots: routine.slots,
+      exercises: resolvedExercises
+    };
   },
 
   getBodyFocusExercises(catId) {

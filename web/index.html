@@ -112,6 +112,7 @@
             <div class="segmented-control" id="bodyFocusLocationSegment">
               <button class="seg-btn active" data-loc="Home" onclick="HomeWorkoutApp.switchFocusLocation('Home')">🏠 Home</button>
               <button class="seg-btn" data-loc="Gym" onclick="HomeWorkoutApp.switchFocusLocation('Gym')">🏋️ Gym</button>
+              <button class="seg-btn" data-loc="Hotel" onclick="HomeWorkoutApp.switchFocusLocation('Hotel')">🏨 Hotel</button>
               <button class="seg-btn" data-loc="All" onclick="HomeWorkoutApp.switchFocusLocation('All')">🌐 All</button>
             </div>
 
@@ -167,16 +168,19 @@
 
           <!-- Clean, Attractive Filter Card Container -->
           <div class="explorer-controls-card">
-            <!-- 1. Location Segmented Control (All / Home / Gym) -->
+            <!-- 1. Location Segmented Control (All / Home / Gym / Hotel) -->
             <div class="exp-segmented-row" id="explorerLocationRow">
               <button class="exp-seg-btn active" data-loc="All" onclick="HomeWorkoutApp.filterExplorerLocation('All')">
                 🌐 All (1,324)
               </button>
               <button class="exp-seg-btn" data-loc="Home" onclick="HomeWorkoutApp.filterExplorerLocation('Home')">
-                🏠 Home (401)
+                🏠 Home
               </button>
               <button class="exp-seg-btn" data-loc="Gym" onclick="HomeWorkoutApp.filterExplorerLocation('Gym')">
-                🏋️ Gym (923)
+                🏋️ Gym
+              </button>
+              <button class="exp-seg-btn" data-loc="Hotel" onclick="HomeWorkoutApp.filterExplorerLocation('Hotel')">
+                🏨 Hotel
               </button>
             </div>
 
@@ -196,7 +200,12 @@
               </button>
             </div>
 
-            <!-- 3. Muscle Filter Pills (Horizontal Scroll) -->
+            <!-- 3. Biomechanical Movement Patterns Filter Pills (Milestone 1) -->
+            <div class="exp-scroll-strip" id="explorerPatternPills" style="margin-bottom: 6px;">
+              <!-- Injected dynamically with .exp-filter-pill -->
+            </div>
+
+            <!-- 4. Muscle Filter Pills (Horizontal Scroll) -->
             <div class="exp-scroll-strip" id="explorerMusclePills">
               <!-- Injected dynamically with .exp-filter-pill -->
             </div>
