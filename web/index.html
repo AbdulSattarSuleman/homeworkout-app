@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=2.5">
+  <link rel="stylesheet" href="css/homeworkout.css?v=3.2">
 </head>
 <body>
 
@@ -202,7 +202,16 @@
 
             <!-- 3. Biomechanical Movement Patterns Filter Pills (Milestone 1) -->
             <div class="exp-scroll-strip" id="explorerPatternPills" style="margin-bottom: 6px;">
-              <!-- Injected dynamically with .exp-filter-pill -->
+              <button class="exp-filter-pill active" data-pat="All" onclick="HomeWorkoutApp.filterExplorerPattern('All')">⚡ All Patterns</button>
+              <button class="exp-filter-pill" data-pat="horizontal_push" onclick="HomeWorkoutApp.filterExplorerPattern('horizontal_push')">💥 Horizontal Push</button>
+              <button class="exp-filter-pill" data-pat="vertical_push" onclick="HomeWorkoutApp.filterExplorerPattern('vertical_push')">⬆️ Vertical Push</button>
+              <button class="exp-filter-pill" data-pat="horizontal_pull" onclick="HomeWorkoutApp.filterExplorerPattern('horizontal_pull')">🚣 Horizontal Pull</button>
+              <button class="exp-filter-pill" data-pat="vertical_pull" onclick="HomeWorkoutApp.filterExplorerPattern('vertical_pull')">🧗 Vertical Pull</button>
+              <button class="exp-filter-pill" data-pat="squat" onclick="HomeWorkoutApp.filterExplorerPattern('squat')">🦵 Squat</button>
+              <button class="exp-filter-pill" data-pat="hinge" onclick="HomeWorkoutApp.filterExplorerPattern('hinge')">⚡ Hinge</button>
+              <button class="exp-filter-pill" data-pat="lunge" onclick="HomeWorkoutApp.filterExplorerPattern('lunge')">🚶 Lunge</button>
+              <button class="exp-filter-pill" data-pat="carry_core" onclick="HomeWorkoutApp.filterExplorerPattern('carry_core')">🛡️ Core & Carry</button>
+              <button class="exp-filter-pill" data-pat="mobility" onclick="HomeWorkoutApp.filterExplorerPattern('mobility')">🧘 Mobility</button>
             </div>
 
             <!-- 4. Muscle Filter Pills (Horizontal Scroll) -->
@@ -520,10 +529,10 @@
   </script>
 
   <!-- Application Logic Scripts -->
-  <script src="js/exercises.js?v=2.5"></script>
-  <script src="js/store.js?v=2.5"></script>
-  <script src="js/visuals.js?v=2.5"></script>
-  <script src="js/telemetry.js?v=2.5"></script>
-  <script src="js/homeworkout.js?v=2.5"></script>
+  <script src="js/exercises.js?v=3.2"></script>
+  <script src="js/store.js?v=3.2"></script>
+  <script src="js/visuals.js?v=3.2"></script>
+  <script src="js/telemetry.js?v=3.2"></script>
+  <script src="js/homeworkout.js?v=3.2"></script>
 </body>
 </html>

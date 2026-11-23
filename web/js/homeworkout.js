@@ -50,9 +50,7 @@ const HomeWorkoutApp = {
 
   onDatabaseLoaded() {
     this.renderBodyFocus();
-    if (this.currentScreen === 'directory' && this.directoryMode === 'library') {
-      this.renderExplorer();
-    }
+    this.renderExplorer();
   },
 
   bindEvents() {
@@ -694,6 +692,13 @@ const HomeWorkoutApp = {
       if (chContainer) chContainer.style.display = 'none';
       if (libContainer) libContainer.style.display = 'block';
       if (titleEl) titleEl.textContent = '1,324 Exercise Library';
+      // Sync search query if user typed into top dashboard search bar
+      const topSearch = document.getElementById('hwSearchInput');
+      const expSearch = document.getElementById('explorerSearchInput');
+      if (topSearch && topSearch.value.trim().length > 0 && expSearch && (!expSearch.value || expSearch.value !== topSearch.value)) {
+        expSearch.value = topSearch.value.trim();
+        this.explorerSearch = expSearch.value;
+      }
       this.renderExplorer();
     }
   },
@@ -761,17 +766,30 @@ const HomeWorkoutApp = {
   },
 
   filterExplorerLevel(lvl) {
-    this.explorerLevel = lvl;
+    this.explorerLevel = (this.explorerLevel === lvl && lvl !== 'All') ? 'All' : lvl;
     this.renderExplorer();
   },
 
   filterExplorerPattern(pattern) {
-    this.explorerPattern = pattern;
+    this.explorerPattern = (this.explorerPattern === pattern && pattern !== 'All') ? 'All' : pattern;
     this.renderExplorer();
   },
 
   filterExplorerMuscle(muscle) {
-    this.explorerMuscle = muscle;
+    this.explorerMuscle = (this.explorerMuscle === muscle && muscle !== 'All') ? 'All' : muscle;
+    this.renderExplorer();
+  },
+
+  resetExplorerFilters() {
+    this.explorerLocation = 'All';
+    this.explorerLevel = 'All';
+    this.explorerPattern = 'All';
+    this.explorerMuscle = 'All';
+    this.explorerSearch = '';
+    const expSearch = document.getElementById('explorerSearchInput');
+    if (expSearch) expSearch.value = '';
+    const topSearch = document.getElementById('hwSearchInput');
+    if (topSearch) topSearch.value = '';
     this.renderExplorer();
   },
 
@@ -794,37 +812,51 @@ const HomeWorkoutApp = {
 
     // 3. Render Movement Pattern Filter Pills (Milestone 1)
     const patternRow = document.getElementById('explorerPatternPills');
-    if (patternRow && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getMovementPatterns) {
-      const patterns = [
-        { id: 'All', name: 'All Patterns', icon: '⚡' },
-        ...ExerciseDataset.getMovementPatterns().map(p => ({ id: p.id, name: p.name, icon: p.icon }))
-      ];
-      patternRow.innerHTML = patterns.map(p => `
-        <button class="exp-filter-pill ${this.explorerPattern === p.id ? 'active' : ''}" onclick="HomeWorkoutApp.filterExplorerPattern('${p.id}')">
-          ${p.icon} ${p.name}
-        </button>
-      `).join('');
+    if (patternRow) {
+      const existingBtns = patternRow.querySelectorAll('.exp-filter-pill');
+      if (existingBtns && existingBtns.length > 0) {
+        existingBtns.forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-pat') === this.explorerPattern);
+        });
+      } else if (typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getMovementPatterns) {
+        const patterns = [
+          { id: 'All', name: 'All Patterns', icon: '⚡' },
+          ...ExerciseDataset.getMovementPatterns().map(p => ({ id: p.id, name: p.name, icon: p.icon }))
+        ];
+        patternRow.innerHTML = patterns.map(p => `
+          <button class="exp-filter-pill ${this.explorerPattern === p.id ? 'active' : ''}" data-pat="${p.id}" onclick="HomeWorkoutApp.filterExplorerPattern('${p.id}')">
+            ${p.icon} ${p.name}
+          </button>
+        `).join('');
+      }
     }
 
     // 4. Render Muscle Pills
     const pillsRow = document.getElementById('explorerMusclePills');
     if (pillsRow) {
-      const muscles = [
-        { id: 'All', name: 'All Muscles' },
-        { id: 'Chest', name: '🫁 Chest' },
-        { id: 'Back', name: '🧗 Back' },
-        { id: 'Warmup', name: '🔥 Warmup' },
-        { id: 'Abs & Core', name: '🍫 Abs & Core' },
-        { id: 'Arms', name: '🦾 Arms' },
-        { id: 'Legs', name: '🦵 Legs' },
-        { id: 'Shoulders', name: '🛡️ Shoulders' }
-      ];
+      const existingMuscles = pillsRow.querySelectorAll('.exp-filter-pill');
+      if (existingMuscles && existingMuscles.length > 0) {
+        existingMuscles.forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-muscle') === this.explorerMuscle);
+        });
+      } else {
+        const muscles = [
+          { id: 'All', name: 'All Muscles' },
+          { id: 'Chest', name: '🫁 Chest' },
+          { id: 'Back', name: '🧗 Back' },
+          { id: 'Warmup', name: '🔥 Warmup' },
+          { id: 'Abs & Core', name: '🍫 Abs & Core' },
+          { id: 'Arms', name: '🦾 Arms' },
+          { id: 'Legs', name: '🦵 Legs' },
+          { id: 'Shoulders', name: '🛡️ Shoulders' }
+        ];
 
-      pillsRow.innerHTML = muscles.map(m => `
-        <button class="exp-filter-pill ${this.explorerMuscle === m.id ? 'active' : ''}" onclick="HomeWorkoutApp.filterExplorerMuscle('${m.id}')">
-          ${m.name}
-        </button>
-      `).join('');
+        pillsRow.innerHTML = muscles.map(m => `
+          <button class="exp-filter-pill ${this.explorerMuscle === m.id ? 'active' : ''}" data-muscle="${m.id}" onclick="HomeWorkoutApp.filterExplorerMuscle('${m.id}')">
+            ${m.name}
+          </button>
+        `).join('');
+      }
     }
 
     // 5. Query exercises
@@ -854,8 +886,11 @@ const HomeWorkoutApp = {
     if (exercises.length === 0) {
       stack.innerHTML = `
         <div style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
-          <p style="font-size: 1rem; font-weight: 700;">No exercises match your filters</p>
-          <p style="font-size: 0.82rem;">Try switching environment or clearing movement pattern filter.</p>
+          <p style="font-size: 1rem; font-weight: 700; color: var(--text-main); margin-bottom: 6px;">No exercises match your filters</p>
+          <p style="font-size: 0.82rem; margin-bottom: 14px;">Try clearing filters or switching level/environment.</p>
+          <button class="exp-filter-pill active" style="margin: 0 auto; display: inline-flex;" onclick="HomeWorkoutApp.resetExplorerFilters()">
+            🔄 Reset All Filters
+          </button>
         </div>
       `;
       return;
@@ -1007,18 +1042,7 @@ const HomeWorkoutApp = {
 
     // Append individual matching exercises from dataset if query is active
     if (searchQuery && searchQuery.trim().length > 0 && typeof ExerciseDataset !== 'undefined') {
-      const q = searchQuery.toLowerCase().trim();
-      const allEx = [];
-      if (ExerciseDataset.bodyFocus) Object.values(ExerciseDataset.bodyFocus).forEach(list => allEx.push(...list));
-      if (ExerciseDataset.challenges) Object.values(ExerciseDataset.challenges).forEach(list => allEx.push(...list));
-
-      const seen = new Set();
-      const matchedEx = allEx.filter(ex => {
-        if (seen.has(ex.id)) return false;
-        const hit = ex.name.toLowerCase().includes(q) || ex.target.toLowerCase().includes(q) || ex.equipment.toLowerCase().includes(q);
-        if (hit) seen.add(ex.id);
-        return hit;
-      });
+      const matchedEx = ExerciseDataset.queryExercises ? ExerciseDataset.queryExercises({ search: searchQuery, limit: 30 }) : [];
 
       if (matchedEx.length > 0) {
         stack.innerHTML += `

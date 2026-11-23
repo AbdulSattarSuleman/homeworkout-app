@@ -962,46 +962,15 @@ const ExerciseDataset = {
   },
 
   queryByPattern(patternId, { location = 'All', equipment = 'All', level = 'All', isPro = null, search = '', limit = 50 } = {}) {
-    let source = this.allExercises;
-    if (!source || source.length === 0) {
-      const fallback = [];
-      if (this.bodyFocus) Object.values(this.bodyFocus).forEach(list => fallback.push(...list));
-      if (this.challenges) Object.values(this.challenges).forEach(list => fallback.push(...list));
-      source = fallback;
-    }
-
-    let results = source.filter(x => {
-      const p = x.movement_pattern || this.inferPattern(x);
-      return p === patternId;
+    return this.queryExercises({
+      pattern: patternId,
+      location,
+      equipment,
+      level,
+      isPro,
+      search,
+      limit
     });
-
-    if (location && location !== 'All') {
-      const locKey = location.toLowerCase();
-      const allowedEq = this.LOCATION_PRESETS[locKey] ? this.LOCATION_PRESETS[locKey].equipment : null;
-      if (allowedEq) {
-        results = results.filter(x => allowedEq.includes(x.equipment_tier || 'bodyweight'));
-      }
-    }
-
-    if (equipment && equipment !== 'All') {
-      const eqKey = equipment.toLowerCase();
-      results = results.filter(x => (x.equipment_tier || '').toLowerCase() === eqKey || (x.equipment || '').toLowerCase().includes(eqKey));
-    }
-
-    if (level && level !== 'All') {
-      results = results.filter(x => (x.level || '').toLowerCase() === level.toLowerCase());
-    }
-
-    if (isPro !== null && isPro !== undefined) {
-      results = results.filter(x => Boolean(x.is_pro) === Boolean(isPro));
-    }
-
-    if (search && search.trim()) {
-      const q = search.toLowerCase().trim();
-      results = results.filter(x => (x.name && x.name.toLowerCase().includes(q)) || (x.target && x.target.toLowerCase().includes(q)));
-    }
-
-    return results.slice(0, limit);
   },
 
   resolveSwap({ currentExercise, targetLocation = 'home', targetEquipment = null, preserveVolume = true }) {
@@ -1162,7 +1131,11 @@ const ExerciseDataset = {
 
     // Filter by Movement Pattern
     if (pattern && pattern !== 'All') {
-      results = results.filter(x => (x.movement_pattern || this.inferPattern(x)) === pattern);
+      const pNorm = pattern.toLowerCase().replace(/[\s\-_]+/g, '_');
+      results = results.filter(x => {
+        const p = (x.movement_pattern || this.inferPattern(x) || '').toLowerCase();
+        return p === pNorm;
+      });
     }
 
     // Filter by Warmup
@@ -1174,11 +1147,11 @@ const ExerciseDataset = {
         const xMuscle = (x.muscle || '').toLowerCase();
         const xTarget = (x.target || '').toLowerCase();
         if (mNorm === 'chest') return xMuscle.includes('chest') || xTarget.includes('pectoral');
-        if (mNorm.includes('abs') || mNorm === 'core') return xMuscle.includes('abs') || xTarget.includes('abs');
+        if (mNorm.includes('abs') || mNorm === 'core') return xMuscle.includes('abs') || xTarget.includes('abs') || (x.movement_pattern || this.inferPattern(x)) === 'carry_core';
         if (mNorm === 'arms' || mNorm === 'arm') return xMuscle.includes('arm') || xTarget.includes('bicep') || xTarget.includes('tricep');
-        if (mNorm === 'legs' || mNorm === 'leg') return xMuscle.includes('leg') || xTarget.includes('quad') || xTarget.includes('glute') || xTarget.includes('calf');
-        if (mNorm === 'shoulders') return xMuscle.includes('shoulder') || xTarget.includes('delt');
-        if (mNorm === 'back') return xMuscle.includes('back') || xTarget.includes('lat') || xTarget.includes('trap');
+        if (mNorm === 'legs' || mNorm === 'leg') return xMuscle.includes('leg') || xTarget.includes('quad') || xTarget.includes('glute') || xTarget.includes('calf') || (x.movement_pattern || this.inferPattern(x)) === 'squat' || (x.movement_pattern || this.inferPattern(x)) === 'lunge';
+        if (mNorm === 'shoulders') return xMuscle.includes('shoulder') || xTarget.includes('delt') || (x.movement_pattern || this.inferPattern(x)) === 'vertical_push';
+        if (mNorm === 'back') return xMuscle.includes('back') || xTarget.includes('lat') || xTarget.includes('trap') || (x.movement_pattern || this.inferPattern(x)) === 'horizontal_pull' || (x.movement_pattern || this.inferPattern(x)) === 'vertical_pull';
         return xMuscle.includes(mNorm);
       });
     }
@@ -1210,17 +1183,33 @@ const ExerciseDataset = {
       results = results.filter(x => Boolean(x.is_pro) === Boolean(isPro));
     }
 
-    // Filter by Search Query
+    // Filter by Search Query (Multi-Field & Biomechanical Pattern Matching)
     if (search && search.trim().length > 0) {
       const q = search.toLowerCase().trim();
-      results = results.filter(x => 
-        (x.name && x.name.toLowerCase().includes(q)) ||
-        (x.target && x.target.toLowerCase().includes(q)) ||
-        (x.equipment && x.equipment.toLowerCase().includes(q)) ||
-        (x.muscle && x.muscle.toLowerCase().includes(q)) ||
-        (x.movement_pattern && x.movement_pattern.toLowerCase().includes(q)) ||
-        (x.level && x.level.toLowerCase().includes(q))
-      );
+      const qTokens = q.split(/[\s\-_]+/).filter(Boolean);
+      const qUnderscore = qTokens.join('_');
+      const qSpace = qTokens.join(' ');
+
+      results = results.filter(x => {
+        const name = (x.name || '').toLowerCase();
+        const target = (x.target || '').toLowerCase();
+        const equip = (x.equipment || '').toLowerCase();
+        const equipTier = (x.equipment_tier || '').toLowerCase();
+        const muscle = (x.muscle || '').toLowerCase();
+        const lvl = (x.level || '').toLowerCase();
+        const patKey = (x.movement_pattern || this.inferPattern(x) || '').toLowerCase();
+        const patSpace = patKey.replace(/_/g, ' ');
+        const patObj = this.MOVEMENT_PATTERNS[patKey];
+        const patTitle = patObj ? patObj.name.toLowerCase() : '';
+
+        // 1. Direct substring match on primary fields
+        if (name.includes(q) || target.includes(q) || equip.includes(q) || equipTier.includes(q) || muscle.includes(q) || lvl.includes(q)) return true;
+        // 2. Pattern match (underscore, space, or display name)
+        if (patKey.includes(qUnderscore) || patSpace.includes(qSpace) || patTitle.includes(q)) return true;
+        // 3. Multi-token match across all fields combined
+        const corpus = `${name} ${target} ${equip} ${equipTier} ${muscle} ${lvl} ${patKey} ${patSpace} ${patTitle}`;
+        return qTokens.every(token => corpus.includes(token));
+      });
     }
 
     return results.slice(0, limit);
