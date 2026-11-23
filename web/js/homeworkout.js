@@ -875,10 +875,21 @@ const HomeWorkoutApp = {
     }
 
     if (countEl) {
-      const locText = this.explorerLocation === 'All' ? 'All Environments' : (this.explorerLocation === 'Home' ? 'Home Gym' : (this.explorerLocation === 'Hotel' ? 'Hotel' : 'Gym'));
+      const locText = this.explorerLocation === 'All' ? 'All Environments' : (this.explorerLocation === 'Home' ? 'Home' : (this.explorerLocation === 'Hotel' ? 'Hotel' : 'Gym'));
       const lvlText = this.explorerLevel === 'All' ? 'All Levels' : `${this.explorerLevel}`;
-      const patText = this.explorerPattern === 'All' ? '' : ` • <strong>${this.explorerPattern.replace(/_/g, ' ').toUpperCase()}</strong>`;
-      countEl.innerHTML = `Showing <strong style="color: var(--brand-blue);">${exercises.length}</strong> exercises • <span>${this.explorerMuscle}</span>${patText} • <span>${lvlText}</span> <span>(${locText})</span>`;
+      
+      const filterChips = [];
+      if (this.explorerPattern !== 'All') {
+        const patObj = (typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getPattern) ? ExerciseDataset.getPattern(this.explorerPattern) : null;
+        filterChips.push(`<strong>${patObj ? `${patObj.icon} ${patObj.name}` : this.explorerPattern.replace(/_/g, ' ').toUpperCase()}</strong>`);
+      }
+      if (this.explorerMuscle !== 'All') {
+        filterChips.push(`<strong>🎯 ${this.explorerMuscle}</strong>`);
+      }
+      filterChips.push(lvlText);
+      filterChips.push(locText);
+
+      countEl.innerHTML = `Showing <strong style="color: var(--brand-blue); font-weight: 800;">${exercises.length}</strong> exercises • ${filterChips.join(' • ')}`;
     }
 
     if (exercises.length === 0) {
@@ -900,30 +911,30 @@ const HomeWorkoutApp = {
       const lvlIcon = lvl === 'Beginner' ? '🟢' : (lvl === 'Advanced' ? '🔴' : '🟡');
       const patternId = ex.movement_pattern || (typeof ExerciseDataset !== 'undefined' ? ExerciseDataset.inferPattern(ex) : null);
       const patObj = (patternId && typeof ExerciseDataset !== 'undefined' && ExerciseDataset.getPattern) ? ExerciseDataset.getPattern(patternId) : null;
-      const patternBadge = patObj ? `<span style="background: rgba(0, 82, 255, 0.08); color: var(--brand-blue); font-size: 0.68rem; font-weight: 800; padding: 2px 6px; border-radius: 4px;">${patObj.icon} ${patObj.name}</span>` : '';
-      const proBadge = ''; // Hidden while all exercises are free
+      const patternBadge = patObj ? `<span class="pattern-pill-tag">${patObj.icon} ${patObj.name}</span>` : '';
 
       return `
         <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
           <div class="fw-left-wrap">
-            <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'54\\' height=\\'54\\' viewBox=\\'0 0 54 54\\'><rect width=\\'54\\' height=\\'54\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
+            <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'56\\' height=\\'56\\' viewBox=\\'0 0 56 56\\'><rect width=\\'56\\' height=\\'56\\' rx=\\'12\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
             <div class="fw-info-wrap">
-              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                <h4 class="fw-title" style="margin: 0;">${ex.name}</h4>
-                ${proBadge}
-              </div>
-              <div class="fw-meta" style="margin-top: 4px;">
+              <h4 class="fw-title">${ex.name}</h4>
+              <div class="fw-badges-row">
                 ${patternBadge}
                 <span class="level-tag ${lvlClass}">${lvlIcon} ${lvl}</span>
-                <span>•</span>
-                <span>🎯 ${ex.target || ex.muscle}</span>
-                <span>•</span>
-                <span>${ex.equipment}</span>
+              </div>
+              <div class="fw-details-row">
+                <span class="fw-detail-target">🎯 ${ex.target || ex.muscle}</span>
+                <span class="fw-meta-dot">•</span>
+                <span class="fw-detail-equip">☑️ ${ex.equipment}</span>
               </div>
             </div>
           </div>
-          <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
-            PREVIEW ➔
+          <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')" title="Preview Exercise">
+            <span>Preview</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
           </button>
         </div>
       `;

@@ -884,8 +884,8 @@ body {
 }
 
 .fw-thumb-img {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border-radius: 12px;
   object-fit: cover;
   background: #F3F4F6;
@@ -896,17 +896,54 @@ body {
 .fw-info-wrap {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
 }
 
 .fw-title {
   font-size: 0.94rem;
   font-weight: 800;
   color: var(--text-main);
-  margin-bottom: 3px;
+  line-height: 1.25;
+  margin: 0 0 4px 0;
+  word-break: break-word;
+}
+
+.fw-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.pattern-pill-tag {
+  background: rgba(0, 82, 255, 0.08);
+  color: var(--brand-blue);
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.fw-details-row {
+  font-size: 0.74rem;
+  color: #6B7280;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.fw-detail-target {
+  color: #374151;
+}
+
+.fw-detail-equip {
+  color: #6B7280;
 }
 
 .fw-meta {
@@ -915,14 +952,13 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-wrap: wrap;
 }
 
 .fw-meta-dot {
   color: #D1D5DB;
   font-weight: 700;
+  font-size: 0.7rem;
 }
 
 .fw-start-btn {
@@ -930,19 +966,32 @@ body {
   color: var(--brand-blue);
   border: none;
   font-family: inherit;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 800;
-  padding: 7px 14px;
+  padding: 6px 12px;
   border-radius: var(--radius-full);
   cursor: pointer;
   flex-shrink: 0;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   transition: all 0.15s ease;
+  align-self: center;
 }
 
 .fw-start-btn:hover {
   background: var(--brand-blue);
   color: #FFFFFF;
+}
+
+.fw-start-btn svg {
+  display: block;
+  transition: transform 0.15s ease;
+}
+
+.fw-start-btn:hover svg {
+  transform: translateX(2px);
 }
 
 .fw-card-actions {
@@ -1140,24 +1189,42 @@ body {
 .directory-header-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 18px;
+  gap: 12px;
+  padding: 14px 18px 10px 18px;
 }
 
 .back-arrow-btn {
-  background: transparent;
-  border: none;
-  font-size: 1.4rem;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
   color: var(--text-main);
-  cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.back-arrow-btn:hover {
+  background: #E5E7EB;
+  color: var(--brand-blue);
+  transform: translateX(-2px);
+}
+
+.back-arrow-btn svg {
+  display: block;
 }
 
 .directory-title {
-  font-size: 1.35rem;
-  font-weight: 900;
+  font-size: 1.25rem;
+  font-weight: 800;
   color: var(--text-main);
+  letter-spacing: -0.3px;
+  margin: 0;
 }
 
 /* Filter Pills Row */

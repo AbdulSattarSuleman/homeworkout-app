@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=3.3">
+  <link rel="stylesheet" href="css/homeworkout.css?v=3.4">
 </head>
 <body>
 
@@ -132,7 +132,11 @@
       <!-- SCREEN 2: DISCOVER & EXERCISE LIBRARY ('More >' or 'Discover' View) -->
       <section class="screen-view" id="directoryScreen">
         <div class="directory-header-row">
-          <button class="back-arrow-btn" id="directoryBackBtn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home">←</button>
+          <button class="back-arrow-btn" id="directoryBackBtn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home" aria-label="Back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
           <h2 class="directory-title" id="directoryScreenTitle">Discover & Library</h2>
           <button class="level-select-pill" onclick="HomeWorkoutApp.goToHome()" style="margin-left: auto; cursor: pointer;">🏠 Home</button>
         </div>
@@ -235,7 +239,11 @@
       <!-- SCREEN 3: WORKOUT REPORT SCREEN -->
       <section class="screen-view" id="reportScreen" style="padding: 0 18px 24px 18px;">
         <div class="directory-header-row" style="margin-bottom: 16px;">
-          <button class="back-arrow-btn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home">←</button>
+          <button class="back-arrow-btn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home" aria-label="Back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
           <h2 class="directory-title">Workout Report</h2>
           <button class="level-select-pill" onclick="HomeWorkoutApp.goToHome()" style="margin-left: auto; cursor: pointer;">🏠 Home</button>
         </div>
@@ -247,7 +255,11 @@
       <!-- SCREEN 4: SETTINGS SCREEN -->
       <section class="screen-view" id="settingsScreen" style="padding: 0 18px 24px 18px;">
         <div class="directory-header-row" style="margin-bottom: 16px;">
-          <button class="back-arrow-btn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home">←</button>
+          <button class="back-arrow-btn" onclick="HomeWorkoutApp.goToHome()" title="Back to Home" aria-label="Back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
           <h2 class="directory-title">Settings</h2>
           <button class="level-select-pill" onclick="HomeWorkoutApp.goToHome()" style="margin-left: auto; cursor: pointer;">🏠 Home</button>
         </div>
@@ -529,10 +541,10 @@
   </script>
 
   <!-- Application Logic Scripts -->
-  <script src="js/exercises.js?v=3.3"></script>
-  <script src="js/store.js?v=3.3"></script>
-  <script src="js/visuals.js?v=3.3"></script>
-  <script src="js/telemetry.js?v=3.3"></script>
-  <script src="js/homeworkout.js?v=3.3"></script>
+  <script src="js/exercises.js?v=3.4"></script>
+  <script src="js/store.js?v=3.4"></script>
+  <script src="js/visuals.js?v=3.4"></script>
+  <script src="js/telemetry.js?v=3.4"></script>
+  <script src="js/homeworkout.js?v=3.4"></script>
 </body>
 </html>
