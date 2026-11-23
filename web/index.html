@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=3.4">
+  <link rel="stylesheet" href="css/homeworkout.css?v=3.5">
 </head>
 <body>
 
@@ -85,7 +85,12 @@
         <!-- Challenge Section Header -->
         <div class="challenge-section-header">
           <h2 class="section-bold-title">Challenge</h2>
-          <a class="more-link-btn" id="challengeMoreBtn">More ❯</a>
+          <a class="more-link-btn" id="challengeMoreBtn" style="display: inline-flex; align-items: center; gap: 4px;">
+            <span>More</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </a>
         </div>
 
         <!-- Horizontal Swipe Carousel -->
@@ -97,8 +102,11 @@
         <div class="body-focus-section">
           <div class="section-header-row">
             <h2 class="section-bold-title">Body Focus</h2>
-            <button class="more-link-btn" onclick="HomeWorkoutApp.openExerciseExplorer()" style="font-size: 0.82rem;">
-              Library (1,324) ❯
+            <button class="more-link-btn" onclick="HomeWorkoutApp.openExerciseExplorer()" style="font-size: 0.82rem; display: inline-flex; align-items: center; gap: 4px;">
+              <span>Library (1,324)</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
             </button>
           </div>
 
@@ -107,8 +115,8 @@
             <!-- Filter chips injected dynamically -->
           </div>
 
-          <!-- 2. Clean Single Controls Strip (Environment Segmented Toggle + Level Pill) -->
-          <div class="body-focus-control-strip">
+          <!-- 2. Controls Section: Full-Width Location Segmented Control + Level Filter Strip -->
+          <div class="body-focus-controls-wrap">
             <div class="segmented-control" id="bodyFocusLocationSegment">
               <button class="seg-btn active" data-loc="Home" onclick="HomeWorkoutApp.switchFocusLocation('Home')">🏠 Home</button>
               <button class="seg-btn" data-loc="Gym" onclick="HomeWorkoutApp.switchFocusLocation('Gym')">🏋️ Gym</button>
@@ -116,9 +124,12 @@
               <button class="seg-btn" data-loc="All" onclick="HomeWorkoutApp.switchFocusLocation('All')">🌐 All</button>
             </div>
 
-            <button class="level-select-pill" id="bodyFocusLevelBtn" onclick="HomeWorkoutApp.openLevelModal()" title="Change Fitness Level">
-              <span id="bfLevelText">🟡 Intermediate</span> ▾
-            </button>
+            <div class="exp-scroll-strip" id="bodyFocusLevelRow">
+              <button class="exp-level-pill" data-lvl="All" onclick="HomeWorkoutApp.switchFocusLevel('All')">All Levels</button>
+              <button class="exp-level-pill" data-lvl="Beginner" onclick="HomeWorkoutApp.switchFocusLevel('Beginner')">🟢 Beginner</button>
+              <button class="exp-level-pill active" data-lvl="Intermediate" onclick="HomeWorkoutApp.switchFocusLevel('Intermediate')">🟡 Intermediate</button>
+              <button class="exp-level-pill" data-lvl="Advanced" onclick="HomeWorkoutApp.switchFocusLevel('Advanced')">🔴 Advanced</button>
+            </div>
           </div>
 
           <!-- 3. Focus Workouts List -->
@@ -329,14 +340,24 @@
     </div>
 
     <div class="runner-controls-row">
-      <button class="start-day-pill-btn" style="background: var(--surface-subtle); color: var(--text-main); flex: 1;" onclick="HomeWorkoutApp.prevExercise()">
-        ⏮ PREV
+      <button class="start-day-pill-btn" style="background: var(--surface-subtle); color: var(--text-main); flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.prevExercise()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        <span>PREV</span>
       </button>
-      <button class="start-day-pill-btn" style="background: var(--surface-subtle); color: var(--text-main); flex: 1;" id="runnerPauseBtn" onclick="HomeWorkoutApp.toggleTimerPause()">
-        ⏸ PAUSE
+      <button class="start-day-pill-btn" style="background: var(--surface-subtle); color: var(--text-main); flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" id="runnerPauseBtn" onclick="HomeWorkoutApp.toggleTimerPause()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="4" width="4" height="16"></rect>
+          <rect x="14" y="4" width="4" height="16"></rect>
+        </svg>
+        <span>PAUSE</span>
       </button>
-      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF; flex: 1.4;" onclick="HomeWorkoutApp.nextExercise()">
-        NEXT ➔
+      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF; flex: 1.4; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.nextExercise()">
+        <span>NEXT</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
       </button>
     </div>
   </div>
@@ -541,10 +562,10 @@
   </script>
 
   <!-- Application Logic Scripts -->
-  <script src="js/exercises.js?v=3.4"></script>
-  <script src="js/store.js?v=3.4"></script>
-  <script src="js/visuals.js?v=3.4"></script>
-  <script src="js/telemetry.js?v=3.4"></script>
-  <script src="js/homeworkout.js?v=3.4"></script>
+  <script src="js/exercises.js?v=3.5"></script>
+  <script src="js/store.js?v=3.5"></script>
+  <script src="js/visuals.js?v=3.5"></script>
+  <script src="js/telemetry.js?v=3.5"></script>
+  <script src="js/homeworkout.js?v=3.5"></script>
 </body>
 </html>

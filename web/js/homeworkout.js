@@ -270,7 +270,11 @@ const HomeWorkoutApp = {
 
           <div class="card-title-row">
             <h3 class="card-big-title">${ch.title}</h3>
-            <span class="card-title-chevron">❯</span>
+            <span class="card-title-chevron">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </span>
           </div>
 
           ${contentBlock}
@@ -280,7 +284,12 @@ const HomeWorkoutApp = {
           </div>
 
           <button class="start-day-pill-btn" onclick="HomeWorkoutApp.startWorkoutSession('${ch.id}', ${ch.currentDay})">
-            START DAY ${ch.currentDay} <span class="start-arrow-circle">➔</span>
+            START DAY ${ch.currentDay} 
+            <span class="start-arrow-circle">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </span>
           </button>
         </div>
       `;
@@ -290,7 +299,7 @@ const HomeWorkoutApp = {
   renderBodyFocus(options = {}) {
     const { forceRefresh = false, shuffle = false } = options;
     const segRow = document.getElementById('bodyFocusLocationSegment');
-    const lvlBtnText = document.getElementById('bfLevelText');
+    const lvlRow = document.getElementById('bodyFocusLevelRow');
     const chipsRow = document.getElementById('categoryChipsRow');
     const workoutsList = document.getElementById('focusWorkoutsList');
     if (!workoutsList) return;
@@ -302,11 +311,11 @@ const HomeWorkoutApp = {
       });
     }
 
-    // Update level pill text
-    if (lvlBtnText) {
-      const lvl = this.activeFocusLevel || 'Intermediate';
-      const icon = lvl === 'Beginner' ? '🟢' : (lvl === 'Advanced' ? '🔴' : '🟡');
-      lvlBtnText.innerHTML = `${icon} ${lvl}`;
+    // Update level pills active state
+    if (lvlRow) {
+      lvlRow.querySelectorAll('.exp-level-pill').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-lvl') === (this.activeFocusLevel || 'Intermediate'));
+      });
     }
 
     // Update muscle category chips
@@ -367,31 +376,45 @@ const HomeWorkoutApp = {
           </button>
         </div>
         <button class="routine-card-start-btn" onclick="HomeWorkoutApp.startFullDailyRoutine()">
-          ▶ START DAY 1 (${exercises.length} EXERCISES) ➔
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <span>START DAY 1 (${exercises.length} EXERCISES)</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
         </button>
       </div>
     `;
 
-    // Clean, roomy, non-overlapping exercise items with single Swap button
+    // Roomy, beautiful exercise items with numbered badge, wide title, and clean actions
     const cardsHtml = exercises.map((ex, idx) => `
       <div class="focus-workout-card" onclick="HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
         <div class="fw-left-wrap">
-          <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'54\\' height=\\'54\\' viewBox=\\'0 0 54 54\\'><rect width=\\'54\\' height=\\'54\\' rx=\\'12\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
+          <div class="fw-thumb-box">
+            <img class="fw-thumb-img" src="${ex.thumbnailUrl}" alt="${ex.name}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'56\\' height=\\'56\\' viewBox=\\'0 0 56 56\\'><rect width=\\'56\\' height=\\'56\\' rx=\\'12\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'55%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'22\\'>💪</text></svg>'">
+            <span class="fw-num-badge">${idx + 1}</span>
+          </div>
           <div class="fw-info-wrap">
-            <h4 class="fw-title">${idx + 1}. ${ex.name}</h4>
-            <div class="fw-meta">
-              <span>${ex.reps || '12-15 reps'}</span>
+            <h4 class="fw-title">${ex.name}</h4>
+            <div class="fw-details-row">
+              <span class="fw-reps-tag">${ex.reps || '12-15 reps'}</span>
               <span class="fw-meta-dot">•</span>
-              <span>🎯 ${ex.target || ex.muscle}</span>
+              <span class="fw-detail-target">🎯 ${ex.target || ex.muscle}</span>
             </div>
           </div>
         </div>
         <div class="fw-card-actions">
-          <button class="fw-swap-btn" onclick="event.stopPropagation(); HomeWorkoutApp.openSwapModal(${idx})" title="Swap this exercise with another one">
-            🔄 Swap
+          <button class="fw-swap-btn" onclick="event.stopPropagation(); HomeWorkoutApp.openSwapModal(${idx})" title="Swap this exercise">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+            <span>Swap</span>
           </button>
-          <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
-            START ➔
+          <button class="fw-circle-play-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')" title="Play exercise">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -560,7 +583,10 @@ const HomeWorkoutApp = {
             </div>
           </div>
           <button class="swap-select-btn" onclick="event.stopPropagation(); HomeWorkoutApp.selectReplacementExercise('${cand.id}')">
-            Choose ➔
+            <span>Choose</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
           </button>
         </div>
       `;
@@ -1033,7 +1059,11 @@ const HomeWorkoutApp = {
 
           <div class="card-title-row">
             <h3 class="card-big-title">${ch.title}</h3>
-            <span class="card-title-chevron">❯</span>
+            <span class="card-title-chevron">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </span>
           </div>
 
           ${contentBlock}
@@ -1043,7 +1073,12 @@ const HomeWorkoutApp = {
           </div>
 
           <button class="start-day-pill-btn" onclick="HomeWorkoutApp.startWorkoutSession('${ch.id}', ${ch.currentDay})">
-            START DAY ${ch.currentDay} <span class="start-arrow-circle">➔</span>
+            START DAY ${ch.currentDay} 
+            <span class="start-arrow-circle">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </span>
           </button>
         </div>
       `;
@@ -1075,8 +1110,11 @@ const HomeWorkoutApp = {
                       </div>
                     </div>
                   </div>
-                  <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')">
-                    START ➔
+                  <button class="fw-start-btn" onclick="event.stopPropagation(); HomeWorkoutApp.startSingleExerciseRunner('${ex.id}')" title="Start Exercise">
+                    <span>Start</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
                   </button>
                 </div>
               `).join('')}
@@ -1262,7 +1300,9 @@ const HomeWorkoutApp = {
     this.isPaused = !this.isPaused;
     const pauseBtn = document.getElementById('runnerPauseBtn');
     if (pauseBtn) {
-      pauseBtn.textContent = this.isPaused ? '▶ RESUME' : '⏸ PAUSE';
+      pauseBtn.innerHTML = this.isPaused
+        ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span>RESUME</span>`
+        : `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg><span>PAUSE</span>`;
     }
   },
 
@@ -1531,7 +1571,10 @@ const HomeWorkoutApp = {
                 </div>
                 ${exCount > 0 ? `
                   <button class="timeline-accordion-btn" onclick="event.stopPropagation(); HomeWorkoutApp.toggleTimelineAccordion('${l.id}')">
-                    <span>▶ View ${exCount} Exercises</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                    <span>View ${exCount} Exercises</span>
                   </button>
                   <div class="timeline-exercises-list" id="tl-ex-${l.id}">
                     ${l.exercises.map(ex => `
@@ -1601,8 +1644,11 @@ const HomeWorkoutApp = {
         <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); background: #FFF; border-radius: 16px; margin-top: 10px;">
           <p style="font-weight: 700; margin-bottom: 6px;">No workout sessions logged yet</p>
           <p style="font-size: 0.78rem; margin-bottom: 16px;">Complete your first workout to see your daily & weekly timeline!</p>
-          <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 200px; margin: 0 auto;" onclick="HomeWorkoutApp.goToHome()">
-            Go to Workouts ➔
+          <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 200px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.goToHome()">
+            <span>Go to Workouts</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
           </button>
         </div>
       `;
@@ -1891,8 +1937,11 @@ const HomeWorkoutApp = {
               <span style="font-size: 0.78rem; color: var(--text-muted);">${token && user.username ? '🟢 Cloud Sync Active' : '⚪ Offline / Guest Session'}</span>
             </div>
           </div>
-          <button class="level-select-pill" onclick="HomeWorkoutApp.openAuthModal()" style="font-size: 0.78rem; font-weight: 800; cursor: pointer;">
-            ${token && user.username ? 'Account ▾' : 'Sign In ➔'}
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openAuthModal()" style="font-size: 0.78rem; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <span>${token && user.username ? 'Account' : 'Sign In'}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
           </button>
         </div>
       </div>
@@ -1905,8 +1954,11 @@ const HomeWorkoutApp = {
             <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Fitness Level</h4>
             <span style="font-size: 0.8rem; color: var(--text-muted);">Current: ${user.fitnessLevel || 'Intermediate'}</span>
           </div>
-          <button class="level-select-pill" onclick="HomeWorkoutApp.openLevelModal()" style="cursor: pointer;">
-            Change ▾
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openLevelModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <span>Change</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
           </button>
         </div>
 
@@ -1916,8 +1968,9 @@ const HomeWorkoutApp = {
             <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">PRO Membership</h4>
             <span style="font-size: 0.8rem; color: var(--text-muted);">${user.isPro ? '⭐ Active PRO Member' : 'Standard Free Plan'}</span>
           </div>
-          <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()">
-            ${user.isPro ? 'MANAGE' : 'UPGRADE ↗'}
+          <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()" style="display: inline-flex; align-items: center; gap: 4px;">
+            <span>${user.isPro ? 'MANAGE' : 'UPGRADE'}</span>
+            ${!user.isPro ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>` : ''}
           </button>
         </div>
 

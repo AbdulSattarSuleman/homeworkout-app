@@ -600,36 +600,42 @@ body {
   margin-bottom: 12px;
 }
 
-/* Single Sleek Control Strip under Muscle Chips */
-.body-focus-control-strip {
+/* Clean Controls Section under Muscle Chips */
+.body-focus-controls-wrap {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 14px;
-  gap: 10px;
 }
 
-/* iOS-style Segmented Control (Home vs Gym) */
+/* Full-width iOS-style Segmented Control (Home vs Gym vs Hotel vs All) */
 .segmented-control {
-  display: inline-flex;
-  background: #E5E7EB;
+  display: flex;
+  width: 100%;
+  background: #F3F4F6;
   border-radius: var(--radius-full);
   padding: 3px;
-  gap: 2px;
+  gap: 3px;
+  border: 1px solid #E5E7EB;
 }
 
 .seg-btn {
+  flex: 1;
   background: transparent;
   border: none;
   color: #4B5563;
   font-family: inherit;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  padding: 5px 12px;
+  padding: 6px 4px;
   border-radius: var(--radius-full);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
 }
 
 .seg-btn:hover {
@@ -883,6 +889,42 @@ body {
   min-width: 0;
 }
 
+.fw-thumb-box {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+}
+
+.fw-thumb-box .fw-thumb-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+  display: block;
+}
+
+.fw-num-badge {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 20px;
+  height: 20px;
+  background: var(--brand-blue);
+  color: #FFFFFF;
+  font-size: 0.65rem;
+  font-weight: 900;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  z-index: 2;
+}
+
 .fw-thumb-img {
   width: 56px;
   height: 56px;
@@ -994,6 +1036,16 @@ body {
   transform: translateX(2px);
 }
 
+.fw-reps-tag {
+  background: #F3F4F6;
+  color: #374151;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
 .fw-card-actions {
   display: flex;
   align-items: center;
@@ -1013,7 +1065,7 @@ body {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   transition: all 0.15s ease;
   white-space: nowrap;
 }
@@ -1021,7 +1073,36 @@ body {
 .fw-swap-btn:hover {
   background: #E5E7EB;
   color: var(--text-main);
-  border-color: #9CA3AF;
+  border-color: #CBD5E1;
+}
+
+.fw-swap-btn svg {
+  display: block;
+}
+
+.fw-circle-play-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--brand-blue-light);
+  color: var(--brand-blue);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.fw-circle-play-btn:hover {
+  background: var(--brand-blue);
+  color: #FFFFFF;
+  transform: scale(1.08);
+}
+
+.fw-circle-play-btn svg {
+  margin-left: 1px;
 }
 
 /* Swap Modal Components */
