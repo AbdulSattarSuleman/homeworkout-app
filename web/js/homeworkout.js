@@ -57,30 +57,51 @@ const HomeWorkoutApp = {
   bindEvents() {
     // Search input live query on dashboard
     const searchInput = document.getElementById('hwSearchInput');
+    let searchDebounce = null;
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         const query = e.target.value;
         if (query.trim().length > 0) {
           this.openDirectory('All', query);
+          clearTimeout(searchDebounce);
+          searchDebounce = setTimeout(() => {
+            if (typeof TelemetryTracker !== 'undefined' && query.trim().length >= 2) {
+              TelemetryTracker.trackSearch(query.trim(), 'dashboard');
+            }
+          }, 600);
         }
       });
     }
 
     // Explorer search input
     const explorerSearch = document.getElementById('explorerSearchInput');
+    let explorerDebounce = null;
     if (explorerSearch) {
       explorerSearch.addEventListener('input', (e) => {
         this.explorerSearch = e.target.value;
         this.renderExplorer();
+        clearTimeout(explorerDebounce);
+        explorerDebounce = setTimeout(() => {
+          if (typeof TelemetryTracker !== 'undefined' && e.target.value.trim().length >= 2) {
+            TelemetryTracker.trackSearch(e.target.value.trim(), 'explorer');
+          }
+        }, 600);
       });
     }
 
     // Swap modal search input
     const swapSearch = document.getElementById('swapModalSearchInput');
+    let swapDebounce = null;
     if (swapSearch) {
       swapSearch.addEventListener('input', (e) => {
         this.swapModalSearch = e.target.value;
         this.renderSwapOptions();
+        clearTimeout(swapDebounce);
+        swapDebounce = setTimeout(() => {
+          if (typeof TelemetryTracker !== 'undefined' && e.target.value.trim().length >= 2) {
+            TelemetryTracker.trackSearch(e.target.value.trim(), 'swap_modal');
+          }
+        }, 600);
       });
     }
 
@@ -430,6 +451,9 @@ const HomeWorkoutApp = {
     if (searchInput) searchInput.value = '';
 
     if (modal) modal.classList.add('active');
+    if (typeof TelemetryTracker !== 'undefined' && currentEx) {
+      TelemetryTracker.trackScreen('swap_exercise_modal', currentEx.name);
+    }
     this.renderSwapOptions();
   },
 
@@ -639,6 +663,10 @@ const HomeWorkoutApp = {
     this.currentTab = 'discover';
     this.activeChallengeFilter = category;
 
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('challenges_directory', category || 'All');
+    }
+
     // Update bottom nav active state
     document.querySelectorAll('.hw-nav-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === 'discover');
@@ -664,6 +692,10 @@ const HomeWorkoutApp = {
     this.currentTab = 'discover';
     if (muscle) this.explorerMuscle = muscle;
     if (location) this.explorerLocation = location;
+
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('exercise_library', muscle || 'All');
+    }
 
     // Update bottom nav active state
     document.querySelectorAll('.hw-nav-btn').forEach(btn => {
@@ -1221,6 +1253,9 @@ const HomeWorkoutApp = {
     }
 
     modal.classList.add('active');
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('fitness_level_modal', currentLevel);
+    }
   },
 
   closeLevelModal() {
@@ -1254,6 +1289,9 @@ const HomeWorkoutApp = {
     }
 
     modal.classList.add('active');
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('weekly_goal_modal', `${user.weeklyGoalTarget || 5}_days`);
+    }
   },
 
   selectGoalTarget(target) {
@@ -1273,6 +1311,9 @@ const HomeWorkoutApp = {
   openProModal() {
     const modal = document.getElementById('proModalBackdrop');
     if (modal) modal.classList.add('active');
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('pro_membership_modal');
+    }
   },
 
   closeProModal() {
@@ -1601,6 +1642,9 @@ const HomeWorkoutApp = {
     }
 
     if (modal) modal.classList.add('active');
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('auth_modal', this.authMode || 'login');
+    }
   },
 
   closeAuthModal() {

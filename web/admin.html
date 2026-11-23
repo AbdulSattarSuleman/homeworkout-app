@@ -516,6 +516,109 @@
       overflow-y: auto;
       flex: 1;
     }
+
+    /* Mobile & Desktop Responsive Layout System */
+    @media (max-width: 900px) {
+      .admin-navbar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 16px;
+      }
+      .nav-actions {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-start;
+      }
+      .admin-container {
+        padding: 16px 12px;
+      }
+      .kpi-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .kpi-card {
+        padding: 14px;
+      }
+      .kpi-value {
+        font-size: 1.5rem;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .kpi-grid {
+        grid-template-columns: 1fr;
+      }
+      .tab-bar {
+        gap: 4px;
+      }
+      .tab-btn {
+        padding: 8px 12px;
+        font-size: 0.78rem;
+      }
+      .activity-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+      }
+      .act-left {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .act-right {
+        width: 100%;
+        justify-content: space-between;
+        font-size: 0.72rem;
+      }
+      .modal-box {
+        width: 95vw;
+        max-height: 90vh;
+        margin: 10px;
+        border-radius: var(--radius-md);
+      }
+      .modal-header {
+        padding: 14px 16px;
+      }
+      .modal-body {
+        padding: 16px 14px;
+      }
+    }
+
+    /* Mobile Athlete Cards (automatically replaces wide table on screens < 850px) */
+    .mobile-user-cards {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    @media (max-width: 850px) {
+      .data-table-container table {
+        display: none;
+      }
+      .mobile-user-cards {
+        display: flex;
+      }
+    }
+
+    .athlete-card-mobile {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.2s;
+    }
+
+    .athlete-card-mobile:hover {
+      background: var(--bg-card-hover);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -713,15 +816,14 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>User</th>
+              <th>Athlete</th>
+              <th>Account Created</th>
+              <th>Last Active</th>
               <th>Fitness Level</th>
               <th>Streak</th>
               <th>Weekly Goal</th>
               <th>Workouts Done</th>
-              <th>Screen Time</th>
               <th>Last Device</th>
-              <th>Last Screen Size</th>
-              <th>Last Active</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -729,6 +831,11 @@
             <!-- Injected dynamically -->
           </tbody>
         </table>
+
+        <!-- Mobile Athlete Cards Container (rendered on mobile screens) -->
+        <div class="mobile-user-cards" id="mobileUserCards">
+          <!-- Injected dynamically -->
+        </div>
       </div>
     </section>
 
@@ -1005,10 +1112,10 @@
 
       async refreshAll() {
         if (!this.token) return;
+        await this.fetchUsers();
         await Promise.all([
           this.fetchStats(),
-          this.fetchActivities(),
-          this.fetchUsers()
+          this.fetchActivities()
         ]);
       },
 
@@ -1138,18 +1245,85 @@
           const supa = this.initSupabase();
           if (!supa) return;
           try {
+            // 1. Fetch workout logs from Supabase
             const { data: logs, error } = await supa.from('workout_logs').select('*').order('completed_at', { ascending: false }).limit(100);
-            this.cachedActivities = (logs || []).map(log => ({
-              id: log.id,
-              event_category: 'workout',
-              event_name: 'workout_complete',
-              created_at: log.completed_at,
-              username: log.user_id ? log.user_id.substring(0, 8) + '...' : 'Athlete',
+            
+            const supaWorkoutActivities = (logs || []).map(log => {
+              const matchedUser = (this.cachedUsers || []).find(u => String(u.id) === String(log.user_id));
+              const uname = matchedUser ? matchedUser.username : (log.user_id ? log.user_id.substring(0, 8) + '...' : 'Athlete');
+              const title = log.title || (log.routine_id ? log.routine_id.replace(/_/g, ' ').toUpperCase() : 'Workout Session');
+              const durationMin = log.duration_minutes || Math.round((log.duration_seconds || 0) / 60) || 18;
+              const cal = log.calories_burned || Math.round(durationMin * 8) || 145;
+              const exercises = log.blocks || log.exercises_completed || [];
+
+              return {
+                id: 'wl_' + log.id,
+                user_id: log.user_id,
+                username: uname,
+                event_type: 'WORKOUT_COMPLETE',
+                event_category: 'workout',
+                created_at: log.completed_at,
+                device_type: 'Cross-Platform Web',
+                details: {
+                  workoutTitle: title,
+                  action: `${durationMin} min completed • ${cal} kcal${exercises.length ? ' (' + exercises.length + ' exercises)' : ''}`,
+                  duration_minutes: durationMin,
+                  calories_burned: cal,
+                  exercises: exercises
+                }
+              };
+            });
+
+            // 2. Synthesize Account Creation events from profiles in this.cachedUsers
+            const accountCreatedActivities = (this.cachedUsers || []).map(u => ({
+              id: 'reg_' + u.id,
+              user_id: u.id,
+              username: u.username,
+              event_type: 'ACCOUNT_CREATED',
+              event_category: 'auth',
+              created_at: u.created_at,
+              device_type: u.last_device_type || 'Cross-Platform Web',
               details: {
-                workoutTitle: log.routine_id ? log.routine_id.replace(/_/g, ' ').toUpperCase() : 'Workout Session',
-                action: `${Math.round((log.duration_seconds || 0) / 60)} min completed`
+                action: `Athlete Account Created (${new Date(u.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })})`,
+                fitness_level: u.fitness_level || 'Intermediate',
+                is_pro: u.is_pro || false
               }
             }));
+
+            // 3. Read local activities buffer from localStorage
+            let localActivities = [];
+            try {
+              const raw = localStorage.getItem('hw_activity_events_buffer');
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                  localActivities = parsed.map(evt => {
+                    if (evt.user_id && (!evt.username || evt.username === 'Athlete' || evt.username === 'Guest')) {
+                      const matched = (this.cachedUsers || []).find(u => String(u.id) === String(evt.user_id));
+                      if (matched) evt.username = matched.username;
+                    }
+                    return evt;
+                  });
+                }
+              }
+            } catch (e) {}
+
+            // Combine all activities, deduplicate by id, and sort chronological descending
+            const combined = [...localActivities, ...supaWorkoutActivities, ...accountCreatedActivities];
+            const seen = new Set();
+            const unique = [];
+            for (const item of combined) {
+              if (!item) continue;
+              const key = item.id || (item.event_type + '_' + item.created_at + '_' + item.username);
+              if (!seen.has(key)) {
+                seen.add(key);
+                unique.push(item);
+              }
+            }
+
+            unique.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+            this.cachedActivities = unique;
             document.getElementById('tabCountActivities').textContent = this.cachedActivities.length;
             this.renderActivities(this.cachedActivities);
           } catch (e) {
@@ -1158,13 +1332,38 @@
           return;
         }
 
+        // Local Python backend fallback
         try {
           const res = await fetch(this.apiUrl(`/api/admin/activities?limit=150&category=${this.activeCategory}`), {
             headers: { 'Authorization': `Bearer ${this.token}` }
           });
           if (!res.ok) return;
           const data = await res.json();
-          this.cachedActivities = data.activities || [];
+          let serverActivities = data.activities || [];
+
+          try {
+            const raw = localStorage.getItem('hw_activity_events_buffer');
+            if (raw) {
+              const localParsed = JSON.parse(raw);
+              if (Array.isArray(localParsed)) {
+                serverActivities = [...localParsed, ...serverActivities];
+              }
+            }
+          } catch (e) {}
+
+          const seen = new Set();
+          const unique = [];
+          for (const item of serverActivities) {
+            if (!item) continue;
+            const key = item.id || (item.event_type + '_' + item.created_at + '_' + item.username);
+            if (!seen.has(key)) {
+              seen.add(key);
+              unique.push(item);
+            }
+          }
+          unique.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+          this.cachedActivities = unique;
           document.getElementById('tabCountActivities').textContent = this.cachedActivities.length;
           this.renderActivities(this.cachedActivities);
         } catch (e) {
@@ -1188,21 +1387,43 @@
         container.innerHTML = list.map(a => {
           let badgeClass = 'type-interaction';
           let icon = '⚡';
-          if (a.event_category === 'workout') { badgeClass = 'type-workout'; icon = '🏋️'; }
-          else if (a.event_category === 'auth') { badgeClass = 'type-auth'; icon = '👤'; }
-          else if (a.event_category === 'navigation') { badgeClass = 'type-nav'; icon = '🧭'; }
+          let typeLabel = a.event_type || 'ACTIVITY';
 
-          const timeStr = a.created_at ? new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-          const dateStr = a.created_at ? new Date(a.created_at).toLocaleDateString() : '';
+          if (a.event_category === 'workout' || a.event_type === 'WORKOUT_COMPLETE' || a.event_type === 'workout_complete') {
+            badgeClass = 'type-workout';
+            icon = '🏋️';
+            typeLabel = 'WORKOUT';
+          } else if (a.event_category === 'auth' || a.event_type === 'ACCOUNT_CREATED' || (a.event_type && a.event_type.startsWith('auth_'))) {
+            badgeClass = 'type-auth';
+            icon = '👤';
+            typeLabel = 'ACCOUNT';
+          } else if (a.event_category === 'navigation' || a.event_type === 'screen_view') {
+            badgeClass = 'type-nav';
+            icon = '🧭';
+            typeLabel = 'SCREEN VIEW';
+          } else if (a.event_type === 'search_query' || (a.details && a.details.query)) {
+            badgeClass = 'type-interaction';
+            icon = '🔍';
+            typeLabel = 'SEARCH';
+          }
+
+          const dateTimeStr = a.created_at ? new Date(a.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }) : '';
 
           let detailText = '';
           if (a.details) {
-            if (a.details.workoutTitle) detailText = `Workout: "${a.details.workoutTitle}" (${a.details.muscle || 'Full Body'})`;
-            else if (a.details.screen) detailText = `Viewed screen: ${a.details.screen}`;
-            else if (a.details.action) detailText = `Action: ${a.details.action} (${a.details.username || ''})`;
-            else if (a.details.query) detailText = `Search query: "${a.details.query}"`;
-            else if (a.details.replacementName) detailText = `Swapped "${a.details.originalName}" ➔ "${a.details.replacementName}"`;
-            else detailText = JSON.stringify(a.details);
+            if (a.details.query) {
+              detailText = `Searched for: "${a.details.query}" ${a.details.originScreen ? '(' + a.details.originScreen + ')' : ''}`;
+            } else if (a.details.screen) {
+              detailText = `Viewed screen: ${a.details.screen} ${a.details.tab ? '• tab: ' + a.details.tab : ''}`;
+            } else if (a.details.workoutTitle) {
+              detailText = `Workout: "${a.details.workoutTitle}" ${a.details.action ? '• ' + a.details.action : ''}`;
+            } else if (a.details.action) {
+              detailText = a.details.action;
+            } else if (a.details.replacementName) {
+              detailText = `Swapped "${a.details.originalName}" ➔ "${a.details.replacementName}"`;
+            } else {
+              detailText = JSON.stringify(a.details);
+            }
           }
 
           const screenRes = (a.screen_width && a.screen_height) ? `${a.screen_width}x${a.screen_height}` : '';
@@ -1210,7 +1431,7 @@
           return `
             <div class="activity-card">
               <div class="act-left">
-                <span class="act-type-badge ${badgeClass}">${icon} ${a.event_type}</span>
+                <span class="act-type-badge ${badgeClass}">${icon} ${typeLabel}</span>
                 <div>
                   <div class="act-user-tag">
                     ${a.username ? `@${a.username}` : '<span style="color: var(--text-muted);">@anonymous_guest</span>'}
@@ -1221,7 +1442,7 @@
               <div class="act-right">
                 ${screenRes ? `<span class="act-device-pill">📐 ${screenRes}</span>` : ''}
                 ${a.device_type ? `<span class="act-device-pill">${a.device_type}</span>` : ''}
-                <span>${dateStr} ${timeStr}</span>
+                <span>${dateTimeStr}</span>
               </div>
             </div>
           `;
@@ -1281,44 +1502,134 @@
 
       renderUsers(usersList) {
         const tbody = document.getElementById('userTableBody');
+        const mobileContainer = document.getElementById('mobileUserCards');
         if (!tbody) return;
 
         if (usersList.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 30px;">No users found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 30px;">No athlete profiles found.</td></tr>';
+          if (mobileContainer) {
+            mobileContainer.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px;">No athlete profiles found.</div>';
+          }
           return;
         }
 
+        // 1. Render Desktop Table (9 aligned columns matching headers)
         tbody.innerHTML = usersList.map(u => {
           const isGuest = u.username && u.username.startsWith('gym_user_');
-          const lastActiveStr = u.updated_at ? new Date(u.updated_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : (u.last_activity_at ? new Date(u.last_activity_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—');
+          const createdDateStr = u.created_at 
+            ? new Date(u.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
+            : '—';
+          const lastActiveRaw = u.updated_at || u.last_activity_at || u.created_at;
+          const lastActiveStr = lastActiveRaw 
+            ? new Date(lastActiveRaw).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) 
+            : '—';
           const userIdStr = String(u.id);
           const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
+          const userWorkouts = (this.cachedActivities || []).filter(a => 
+            a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === u.username.toLowerCase()))
+          );
+          const workoutCount = u.workout_count !== undefined ? u.workout_count : userWorkouts.length;
+
           return `
             <tr>
               <td>
                 <div style="font-weight: 800; color: #FFF; display: flex; align-items: center; gap: 6px;">
-                  ${u.username}
+                  @${u.username}
                   ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
-                  ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">1-TAP GUEST</span>' : ''}
+                  ${u.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO</span>' : ''}
+                  ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">GUEST</span>' : ''}
                 </div>
                 <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${shortId}</div>
               </td>
-              <td><span style="font-weight: 700;">${u.fitness_level || 'Intermediate'}</span></td>
-              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${u.streak_count || 0}</span></td>
-              <td>${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5}</td>
-              <td><strong style="color: var(--accent-blue);">${u.workout_count || u.weekly_completed_count || 0}</strong></td>
-              <td><span style="font-weight: 700; color: var(--accent-emerald);">${this.formatSeconds(u.total_screen_time_seconds || 0)}</span></td>
-              <td><span class="act-device-pill">${u.last_device_type || 'Cloud Sync'}</span></td>
-              <td><span class="act-device-pill" style="color: var(--accent-blue);">${u.last_screen_resolution || 'Adaptive'}</span></td>
-              <td style="font-size: 0.75rem; color: var(--text-muted);">${lastActiveStr}</td>
               <td>
-                <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.72rem;" onclick="AdminApp.inspectUser('${userIdStr}')">
+                <div style="font-weight: 600; color: #FFF; font-size: 0.8rem;">📅 ${createdDateStr}</div>
+              </td>
+              <td>
+                <div style="color: var(--accent-blue); font-weight: 600; font-size: 0.8rem;">⚡ ${lastActiveStr}</div>
+              </td>
+              <td>
+                <span style="font-weight: 700; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-size: 0.78rem;">
+                  ${u.fitness_level || 'Intermediate'}
+                </span>
+              </td>
+              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${u.streak_count || 0}</span></td>
+              <td><span style="font-weight: 700;">${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5}</span></td>
+              <td><strong style="color: var(--accent-emerald);">${workoutCount}</strong></td>
+              <td><span class="act-device-pill">${u.last_device_type || 'Cloud Sync'}</span></td>
+              <td>
+                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.75rem;" onclick="AdminApp.inspectUser('${userIdStr}')">
                   🔍 Inspect
                 </button>
               </td>
             </tr>
           `;
         }).join('');
+
+        // 2. Render Mobile Athlete Cards (rendered when screen width <= 850px)
+        if (mobileContainer) {
+          mobileContainer.innerHTML = usersList.map(u => {
+            const isGuest = u.username && u.username.startsWith('gym_user_');
+            const createdDateStr = u.created_at 
+              ? new Date(u.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) 
+              : '—';
+            const lastActiveRaw = u.updated_at || u.last_activity_at || u.created_at;
+            const lastActiveStr = lastActiveRaw 
+              ? new Date(lastActiveRaw).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) 
+              : '—';
+            const userIdStr = String(u.id);
+            const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
+            const userWorkouts = (this.cachedActivities || []).filter(a => 
+              a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === u.username.toLowerCase()))
+            );
+            const workoutCount = u.workout_count !== undefined ? u.workout_count : userWorkouts.length;
+
+            return `
+              <div class="athlete-card-mobile">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                  <div>
+                    <div style="font-weight: 800; font-size: 1rem; color: #FFF; display: flex; align-items: center; gap: 6px;">
+                      @${u.username}
+                      ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
+                      ${u.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO</span>' : ''}
+                      ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">GUEST</span>' : ''}
+                    </div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">UUID: #${shortId}</div>
+                  </div>
+                  <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 3px 8px; border-radius: 6px; font-weight: 700;">
+                    ${u.fitness_level || 'Intermediate'}
+                  </span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; padding: 10px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid rgba(255,255,255,0.04);">
+                  <div>
+                    <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">📅 Account Created</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: #FFF; margin-top: 2px;">${createdDateStr}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">⚡ Last Active</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-blue); margin-top: 2px;">${lastActiveStr}</div>
+                  </div>
+                  <div>
+                    <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">🔥 Streak & Goal</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-amber); margin-top: 2px;">
+                      ${u.streak_count || 0}d • ${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5} wk
+                    </div>
+                  </div>
+                  <div>
+                    <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">🏆 Workouts Done</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-emerald); margin-top: 2px;">
+                      ${workoutCount} completed
+                    </div>
+                  </div>
+                </div>
+
+                <button class="btn btn-secondary" style="width: 100%; justify-content: center; padding: 9px; font-size: 0.8rem; margin-top: 4px;" onclick="AdminApp.inspectUser('${userIdStr}')">
+                  🔍 Inspect Athlete Activity & Searches
+                </button>
+              </div>
+            `;
+          }).join('');
+        }
       },
 
       filterUsers() {
@@ -1332,132 +1643,222 @@
       },
 
       async inspectUser(userId) {
+        const user = (this.cachedUsers || []).find(u => String(u.id) === String(userId)) || { id: userId, username: 'Athlete' };
+        const modal = document.getElementById('userDetailModal');
+        const title = document.getElementById('detailModalTitle');
+        const body = document.getElementById('detailModalBody');
+        if (!modal || !title || !body) return;
+
+        title.innerHTML = `👤 Inspecting Athlete: <strong>@${user.username}</strong>`;
+
+        let workouts = [];
+        let activities = [];
+
         if (this.isSupabaseMode) {
-          const user = this.cachedUsers.find(u => String(u.id) === String(userId)) || { id: userId, username: 'Athlete' };
           const supa = this.initSupabase();
-          let workouts = [];
           if (supa) {
             try {
               const { data: logs } = await supa.from('workout_logs').select('*').eq('user_id', userId).order('completed_at', { ascending: false });
               workouts = (logs || []).map(l => ({
-                workout_title: l.routine_id ? l.routine_id.replace(/_/g, ' ').toUpperCase() : 'Completed Routine',
-                completed_at: l.completed_at ? new Date(l.completed_at).toLocaleString() : 'Recent',
-                duration_minutes: Math.round((l.duration_seconds || 0) / 60),
-                calories_burned: Math.round((l.duration_seconds || 0) * 0.12),
-                exercises: l.exercises_completed || []
+                workout_title: l.title || (l.routine_id ? l.routine_id.replace(/_/g, ' ').toUpperCase() : 'Completed Routine'),
+                completed_at: l.completed_at ? new Date(l.completed_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Recent',
+                duration_minutes: l.duration_minutes || Math.round((l.duration_seconds || 0) / 60) || 18,
+                calories_burned: l.calories_burned || 145,
+                exercises: l.blocks || l.exercises_completed || []
               }));
-            } catch (e) {}
+            } catch (e) {
+              console.warn('[Admin Supabase] inspectUser workouts error:', e);
+            }
           }
 
-          const modal = document.getElementById('userDetailModal');
-          const title = document.getElementById('detailModalTitle');
-          const body = document.getElementById('detailModalBody');
-
-          title.innerHTML = `👤 Inspecting Athlete: <strong>@${user.username}</strong>`;
-
-          body.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Streak</div>
-                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-amber);">🔥 ${user.streak_count || 0} Days</div>
-              </div>
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Fitness Level</div>
-                <div style="font-size: 1.2rem; font-weight: 800; color: #FFF;">${user.fitness_level || 'Intermediate'}</div>
-              </div>
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
-                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-blue);">${user.weekly_completed_count || 0}/${user.weekly_goal_target || 5}</div>
-              </div>
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Total Workouts</div>
-                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-emerald);">${workouts.length}</div>
-              </div>
-            </div>
-
-            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF;">🏋️ Completed Workout Sessions (${workouts.length})</h4>
-            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
-              ${workouts.length === 0 ? '<div style="color: var(--text-muted); font-size: 0.8rem;">No workouts completed yet.</div>' : workouts.map(w => `
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                    <strong style="color: #FFF; font-size: 0.88rem;">${w.workout_title}</strong>
-                    <div style="font-size: 0.72rem; color: var(--text-muted);">${w.completed_at} • ${w.duration_minutes} min • ${w.calories_burned} kcal</div>
-                  </div>
-                  <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 2px 8px; border-radius: 4px;">
-                    ${(w.exercises || []).length} Exercises
-                  </span>
-                </div>
-              `).join('')}
-            </div>
-          `;
-
-          if (modal) modal.classList.add('active');
-          return;
-        }
-
-        try {
-          const res = await fetch(this.apiUrl(`/api/admin/user/${userId}/detail`), {
-            headers: { 'Authorization': `Bearer ${this.token}` }
+          // Filter activities from this.cachedActivities
+          activities = (this.cachedActivities || []).filter(a => {
+            const matchId = String(a.user_id) === String(userId);
+            const matchUname = a.username && user.username && a.username.toLowerCase() === user.username.toLowerCase();
+            return matchId || matchUname;
           });
-          if (!res.ok) return;
-          const data = await res.json();
+        } else {
+          // Local Python server fallback
+          try {
+            const res = await fetch(this.apiUrl(`/api/admin/user/${userId}/detail`), {
+              headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              workouts = data.workouts || [];
+              activities = data.activities || [];
+            }
+          } catch (e) {}
+        }
 
-          const modal = document.getElementById('userDetailModal');
-          const title = document.getElementById('detailModalTitle');
-          const body = document.getElementById('detailModalBody');
+        // Format Date Times with full detail
+        const createdFull = user.created_at 
+          ? new Date(user.created_at).toLocaleString([], { dateStyle: 'full', timeStyle: 'medium' }) 
+          : 'Timestamp recorded on initial sign in';
+        const lastActiveFull = (user.updated_at || user.created_at)
+          ? new Date(user.updated_at || user.created_at).toLocaleString([], { dateStyle: 'full', timeStyle: 'medium' }) 
+          : 'Active now';
 
-          title.innerHTML = `👤 Inspecting Athlete: <strong>@${data.user.username}</strong> (ID #${data.user.id})`;
+        // Separate screen clicks and search queries
+        const screenViews = activities.filter(a => a.event_type === 'screen_view' || a.event_category === 'navigation');
+        const searchQueries = activities.filter(a => a.event_type === 'search_query' || (a.details && a.details.query));
 
-          body.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Streak</div>
-                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-amber);">🔥 ${data.user.streak_count} Days</div>
+        body.innerHTML = `
+          <!-- 1. ATHLETE HEADER & TIMESTAMPS CARD -->
+          <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 10px;">
+              <div>
+                <div style="font-size: 1.15rem; font-weight: 900; color: #FFF; display: flex; align-items: center; gap: 8px;">
+                  @${user.username}
+                  ${user.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
+                  ${user.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO ATHLETE</span>' : '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">FREE TIER</span>'}
+                </div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; font-family: monospace;">UUID: ${user.id}</div>
               </div>
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Fitness Level</div>
-                <div style="font-size: 1.2rem; font-weight: 800; color: #FFF;">${data.user.fitness_level}</div>
-              </div>
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
-                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-blue);">${data.user.weekly_completed_count}/${data.user.weekly_goal_target}</div>
-              </div>
-              <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-                <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">Total Workouts</div>
-                <div style="font-size: 1.4rem; font-weight: 900; color: var(--accent-emerald);">${data.workouts.length}</div>
-              </div>
+              <span style="font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 4px 10px; border-radius: 6px; font-weight: 800;">
+                ${user.fitness_level || 'Intermediate'} Level
+              </span>
             </div>
 
-            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF;">🏋️ Completed Workout Sessions (${data.workouts.length})</h4>
-            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px;">
-              ${data.workouts.length === 0 ? '<div style="color: var(--text-muted); font-size: 0.8rem;">No workouts completed yet.</div>' : data.workouts.map(w => `
-                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <!-- EXACT DATE & TIME BADGES -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">
+              <div style="background: rgba(0,0,0,0.25); padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">📅 Account Created (Date & Time)</div>
+                <div style="font-size: 0.82rem; font-weight: 800; color: #FFF; margin-top: 4px;">${createdFull}</div>
+              </div>
+              <div style="background: rgba(0,0,0,0.25); padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">⚡ Last Active (Date & Time)</div>
+                <div style="font-size: 0.82rem; font-weight: 800; color: var(--accent-blue); margin-top: 4px;">${lastActiveFull}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. KPI METRICS GRID -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
+            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
+              <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Current Streak</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-amber); margin-top: 3px;">🔥 ${user.streak_count || 0}d</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
+              <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-blue); margin-top: 3px;">${user.weekly_completed_count || 0}/${user.weekly_goal_target || 5}</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
+              <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Workouts Done</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-emerald); margin-top: 3px;">${workouts.length}</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
+              <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Location Preference</div>
+              <div style="font-size: 1rem; font-weight: 800; color: #FFF; margin-top: 5px; text-transform: capitalize;">🏠 ${user.active_location_id || 'home'}</div>
+            </div>
+          </div>
+
+          <!-- 3. USER ACTIONS & SEARCH TRACE (CLICK WHICH SCREEN WHAT SEARCH) -->
+          <div style="margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h4 style="font-size: 0.95rem; font-weight: 800; color: #FFF; margin: 0; display: flex; align-items: center; gap: 6px;">
+                <span>⚡</span> Screen Navigation & Search Trace (${activities.length})
+              </h4>
+              <span style="font-size: 0.72rem; color: var(--text-muted);">
+                ${screenViews.length} screens • ${searchQueries.length} searches
+              </span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding-right: 4px;">
+              ${activities.length === 0 ? `
+                <div style="background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: 8px; padding: 24px; text-align: center; color: var(--text-muted); font-size: 0.8rem; line-height: 1.5;">
+                  🔍 No screen navigation or search events recorded yet for this athlete in this browser session.<br>
+                  <span style="font-size: 0.72rem; color: var(--text-muted);">When the athlete navigates screens (Dashboard, Explorer, Challenges, Modals) and types search queries, they will appear here in chronological order.</span>
+                </div>
+              ` : activities.map(a => {
+                let badge = '⚡ ACTION';
+                let badgeBg = 'rgba(255,255,255,0.08)';
+                let badgeColor = '#FFF';
+                let headline = '';
+                let subtext = '';
+
+                if (a.event_type === 'screen_view' || a.event_category === 'navigation') {
+                  badge = '🧭 SCREEN VIEW';
+                  badgeBg = 'rgba(56, 189, 248, 0.15)';
+                  badgeColor = 'var(--accent-blue)';
+                  const scr = (a.details && (a.details.screen || a.details.tab)) || 'Screen';
+                  headline = `Viewed Screen: <strong>${scr}</strong>`;
+                  subtext = a.details && a.details.tab ? `Tab: ${a.details.tab}` : 'Navigated by athlete';
+                } else if (a.event_type === 'search_query' || (a.details && a.details.query)) {
+                  badge = '🔍 SEARCH';
+                  badgeBg = 'rgba(234, 179, 8, 0.15)';
+                  badgeColor = 'var(--accent-amber)';
+                  headline = `Searched query: <strong>"${a.details.query}"</strong>`;
+                  subtext = `Origin: ${a.details.originScreen || 'App'}`;
+                } else if (a.event_type === 'WORKOUT_COMPLETE' || a.event_category === 'workout') {
+                  badge = '🏋️ WORKOUT';
+                  badgeBg = 'rgba(16, 185, 129, 0.15)';
+                  badgeColor = 'var(--accent-emerald)';
+                  headline = `Completed: <strong>${(a.details && a.details.workoutTitle) || 'Workout Session'}</strong>`;
+                  subtext = (a.details && a.details.action) || 'Finished session';
+                } else if (a.event_type === 'ACCOUNT_CREATED' || a.event_category === 'auth') {
+                  badge = '👤 ACCOUNT';
+                  badgeBg = 'rgba(168, 85, 247, 0.15)';
+                  badgeColor = 'var(--accent-purple)';
+                  headline = `Account Created on App`;
+                  subtext = (a.details && a.details.action) || 'Registered profile';
+                } else {
+                  headline = `Event: ${a.event_type}`;
+                  subtext = JSON.stringify(a.details || {});
+                }
+
+                const evTime = a.created_at ? new Date(a.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }) : '—';
+                const devicePill = a.device_type ? `<span class="act-device-pill" style="font-size: 0.65rem;">${a.device_type}</span>` : '';
+
+                return `
+                  <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+                      <span style="background: ${badgeBg}; color: ${badgeColor}; font-size: 0.68rem; font-weight: 800; padding: 3px 8px; border-radius: 5px; white-space: nowrap;">
+                        ${badge}
+                      </span>
+                      <div style="min-width: 0;">
+                        <div style="font-size: 0.82rem; color: #FFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${headline}</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">${subtext}</div>
+                      </div>
+                    </div>
+                    <div style="text-align: right; white-space: nowrap; font-size: 0.72rem; color: var(--text-muted); display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                      ${devicePill}
+                      <span>${evTime}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- 4. COMPLETED WORKOUTS LIST -->
+          <div>
+            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF; display: flex; align-items: center; gap: 6px;">
+              <span>🏋️</span> Completed Workout Sessions (${workouts.length})
+            </h4>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${workouts.length === 0 ? `
+                <div style="background: rgba(255,255,255,0.02); border: 1px dashed var(--border-color); border-radius: 8px; padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+                  No workout logs recorded for this athlete yet.
+                </div>
+              ` : workouts.map(w => `
+                <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 12px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                   <div>
                     <strong style="color: #FFF; font-size: 0.88rem;">${w.workout_title}</strong>
-                    <div style="font-size: 0.72rem; color: var(--text-muted);">${w.completed_at} • ${w.duration_minutes} min • ${w.calories_burned} kcal</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+                      📅 ${w.completed_at} • ⏱️ ${w.duration_minutes} min • 🔥 ${w.calories_burned} kcal
+                    </div>
                   </div>
-                  <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 2px 8px; border-radius: 4px;">
+                  <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 3px 8px; border-radius: 4px; white-space: nowrap;">
                     ${(w.exercises || []).length} Exercises
                   </span>
                 </div>
               `).join('')}
             </div>
+          </div>
+        `;
 
-            <h4 style="font-size: 0.95rem; font-weight: 800; margin-bottom: 12px; color: #FFF;">⚡ User Action Trace (${data.activities.length} Actions)</h4>
-            <div style="display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto;">
-              ${data.activities.length === 0 ? '<div style="color: var(--text-muted); font-size: 0.8rem;">No actions recorded yet.</div>' : data.activities.map(a => `
-                <div style="font-size: 0.75rem; background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color); display: flex; justify-content: space-between;">
-                  <span><strong>${a.event_type}</strong>: ${JSON.stringify(a.details)}</span>
-                  <span style="color: var(--text-muted);">${a.created_at}</span>
-                </div>
-              `).join('')}
-            </div>
-          `;
-
-          if (modal) modal.classList.add('active');
-        } catch (e) {
-          alert('Failed to load user details: ' + e.message);
-        }
+        if (modal) modal.classList.add('active');
       },
 
       closeDetailModal() {

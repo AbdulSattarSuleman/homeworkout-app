@@ -267,6 +267,26 @@ const HomeWorkoutStore = {
           user.isPro = Boolean(profile.is_pro);
           user.weeklyGoalTarget = Number(profile.weekly_goal_target) || 5;
           user.weeklyCompletedCount = Number(profile.weekly_completed_count) || 0;
+          user.createdAt = profile.created_at || user.createdAt;
+        } else {
+          // Profile row doesn't exist yet in Supabase profiles table! Auto-create it now:
+          const username = (verifiedUser.user_metadata && verifiedUser.user_metadata.username) 
+            || user.username 
+            || (verifiedUser.email ? verifiedUser.email.split('@')[0] : 'Athlete');
+          const nowIso = new Date().toISOString();
+          user.username = username;
+          user.name = username;
+          await client.from('profiles').upsert({
+            id: verifiedUser.id,
+            username: username,
+            fitness_level: user.fitnessLevel || 'Intermediate',
+            is_pro: Boolean(user.isPro),
+            streak_count: user.streakCount || 0,
+            weekly_goal_target: user.weeklyGoalTarget || 5,
+            weekly_completed_count: user.weeklyCompletedCount || 0,
+            created_at: verifiedUser.created_at || nowIso,
+            updated_at: nowIso
+          }).catch(e => console.warn('[Supabase] Auto-create profile notice:', e));
         }
 
         this.saveUser(user);
@@ -402,20 +422,34 @@ const HomeWorkoutStore = {
       // Supabase Cloud Profile Sync
       const client = this.initSupabase();
       if (client && !user.isGuest && user.username) {
-        client.auth.getSession().then(({ data }) => {
-          if (data && data.session && data.session.user) {
-            client.from('profiles').upsert({
-              id: data.session.user.id,
-              username: user.username,
-              fitness_level: user.fitnessLevel || 'Intermediate',
-              is_pro: Boolean(user.isPro),
-              streak_count: user.streakCount || 0,
-              weekly_goal_target: user.weeklyGoalTarget || 5,
-              weekly_completed_count: user.weeklyCompletedCount || 0,
-              updated_at: new Date().toISOString()
-            }).then(() => {}).catch(err => console.warn('[Supabase] profile sync notice:', err));
-          }
-        });
+        const uid = (user.id && user.id.length === 36) ? user.id : null;
+        if (uid) {
+          client.from('profiles').upsert({
+            id: uid,
+            username: user.username,
+            fitness_level: user.fitnessLevel || 'Intermediate',
+            is_pro: Boolean(user.isPro),
+            streak_count: user.streakCount || 0,
+            weekly_goal_target: user.weeklyGoalTarget || 5,
+            weekly_completed_count: user.weeklyCompletedCount || 0,
+            updated_at: new Date().toISOString()
+          }).then(() => {}).catch(err => console.warn('[Supabase] profile sync notice:', err));
+        } else {
+          client.auth.getSession().then(({ data }) => {
+            if (data && data.session && data.session.user) {
+              client.from('profiles').upsert({
+                id: data.session.user.id,
+                username: user.username,
+                fitness_level: user.fitnessLevel || 'Intermediate',
+                is_pro: Boolean(user.isPro),
+                streak_count: user.streakCount || 0,
+                weekly_goal_target: user.weeklyGoalTarget || 5,
+                weekly_completed_count: user.weeklyCompletedCount || 0,
+                updated_at: new Date().toISOString()
+              }).then(() => {}).catch(err => console.warn('[Supabase] profile sync notice:', err));
+            }
+          });
+        }
       }
     } catch (e) {
       console.warn('Failed to save user:', e);

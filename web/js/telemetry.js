@@ -90,37 +90,67 @@ const TelemetryTracker = {
   },
 
   async logEvent(eventType, eventCategory = 'interaction', eventDetails = {}) {
-    const base = this.getApiBase();
-    if (!base) return; // In static hosting without backend, skip network logging
-
     try {
       const device = this.getDeviceInfo();
+      const user = (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.getUser) 
+        ? HomeWorkoutStore.getUser() 
+        : {};
       const token = (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.getToken) 
         ? HomeWorkoutStore.getToken() 
         : null;
 
-      const headers = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const payload = {
+      const eventRecord = {
+        id: 'evt_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6),
         session_id: this.sessionId,
+        user_id: user.id || null,
+        username: user.username || (user.isGuest ? 'Guest' : 'Athlete'),
         event_type: eventType,
         event_category: eventCategory,
-        event_details: eventDetails,
+        details: eventDetails,
         screen_width: device.screenWidth,
         screen_height: device.screenHeight,
         viewport_width: device.viewportWidth,
         viewport_height: device.viewportHeight,
-        device_type: device.deviceType
+        device_type: device.deviceType,
+        created_at: new Date().toISOString()
       };
 
-      const url = `${base}/api/telemetry/event`;
+      // 1. Maintain persistent client activity buffer in localStorage (up to 200 events)
+      try {
+        const MAX_BUFFER = 200;
+        let buffer = JSON.parse(localStorage.getItem('hw_activity_events_buffer') || '[]');
+        buffer.unshift(eventRecord);
+        if (buffer.length > MAX_BUFFER) buffer = buffer.slice(0, MAX_BUFFER);
+        localStorage.setItem('hw_activity_events_buffer', JSON.stringify(buffer));
+      } catch (e) {}
 
-      fetch(url, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(payload)
-      }).catch(() => {});
+      // 2. Cloud Supabase Activity Log: Attempt cloud insert if connected
+      if (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.initSupabase) {
+        const client = HomeWorkoutStore.initSupabase();
+        if (client && !user.isGuest) {
+          client.from('activity_logs').insert({
+            user_id: (user.id && user.id.length === 36) ? user.id : null,
+            username: user.username || 'Athlete',
+            event_type: eventType,
+            event_category: eventCategory,
+            event_details: eventDetails,
+            device_type: device.deviceType,
+            screen_resolution: `${device.screenWidth}x${device.screenHeight}`
+          }).then(() => {}).catch(() => {});
+        }
+      }
+
+      // 3. Fallback to local Python backend if URL is configured
+      const base = this.getApiBase();
+      if (base) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        fetch(`${base}/api/telemetry/event`, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(eventRecord)
+        }).catch(() => {});
+      }
     } catch (e) {}
   },
 
