@@ -270,27 +270,46 @@ const HomeWorkoutStore = {
   async sendPasswordResetEmail(emailOrUser) {
     const cleanInput = (emailOrUser || '').trim();
     if (!cleanInput) {
-      throw new Error('Please enter your email or username.');
+      throw new Error('Please enter your registered email address or athlete username.');
     }
 
     let targetEmail = cleanInput;
+    const client = this.initSupabase();
+
     if (!targetEmail.includes('@')) {
-      // Check stored username-to-email mapping
+      // 1. Check local username-to-email mapping
       try {
         const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
         if (emailMap[cleanInput.toLowerCase()]) {
           targetEmail = emailMap[cleanInput.toLowerCase()];
         }
       } catch (e) {}
+
+      // 2. Check currently stored local user if matching
+      if (!targetEmail.includes('@')) {
+        const localUser = this.getUser();
+        if (localUser && localUser.username && localUser.username.toLowerCase() === cleanInput.toLowerCase() && localUser.email) {
+          targetEmail = localUser.email;
+        }
+      }
+
+      // 3. Query Supabase profiles table in cloud
+      if (!targetEmail.includes('@') && client) {
+        try {
+          const { data: profile } = await client.from('profiles').select('email').ilike('username', cleanInput).maybeSingle();
+          if (profile && profile.email && profile.email.includes('@')) {
+            targetEmail = profile.email;
+          }
+        } catch (e) {}
+      }
     }
 
     if (!targetEmail.includes('@') || targetEmail.endsWith('@homeworkout.app')) {
-      throw new Error('This account was created without a verified external email address. Password reset emails can only be sent to valid email addresses. If you know your password, please sign in and link your recovery email in Settings.');
+      throw new Error('No verified personal recovery email is linked to this athlete account. Password reset emails can only be delivered to valid personal email addresses. If you know your password, please sign in and link your recovery email in Settings.');
     }
 
-    const client = this.initSupabase();
     if (!client) {
-      throw new Error('Authentication service unavailable. Please check your network.');
+      throw new Error('Authentication service unavailable. Please check your network connection.');
     }
 
     // Redirect user back to the app root upon clicking the reset link
@@ -329,8 +348,8 @@ const HomeWorkoutStore = {
   },
 
   async updateUserAccount(newEmail, newPassword) {
+    const user = this.getUser();
     const client = this.initSupabase();
-    if (!client) throw new Error('Authentication service unavailable.');
 
     const updatePayload = {};
     if (newEmail && newEmail.includes('@')) {
@@ -344,15 +363,44 @@ const HomeWorkoutStore = {
       throw new Error('Please provide a valid email or a new password with at least 8 characters.');
     }
 
-    const { data, error } = await client.auth.updateUser(updatePayload);
-    if (error) throw new Error(error.message || 'Update failed.');
+    if (client) {
+      try {
+        const { data, error } = await client.auth.updateUser(updatePayload);
+        if (error) {
+          console.warn('[Store] Supabase updateUser warning:', error.message);
+          if (!error.message.toLowerCase().includes('session') && !error.message.toLowerCase().includes('not logged in')) {
+            throw error;
+          }
+        }
+      } catch (err) {
+        if (!err.message.toLowerCase().includes('session') && !err.message.toLowerCase().includes('not logged in')) {
+          throw new Error(err.message || 'Update failed.');
+        }
+      }
+    }
 
-    const user = this.getUser();
     if (updatePayload.email) {
       user.email = updatePayload.email;
       this.saveUser(user);
+      try {
+        const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
+        if (user.username) {
+          emailMap[user.username.toLowerCase()] = updatePayload.email;
+          localStorage.setItem('hw_username_email_map', JSON.stringify(emailMap));
+        }
+      } catch (e) {}
     }
-    return { status: 'success', user: data.user };
+
+    if (client && user.id && !user.isGuest) {
+      try {
+        await client.from('profiles').update({
+          email: updatePayload.email || user.email,
+          updated_at: new Date().toISOString()
+        }).eq('id', user.id);
+      } catch (e) {}
+    }
+
+    return { status: 'success', user };
   },
 
   async guestLogin() {

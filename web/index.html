@@ -12,7 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=3.7">
+  <link rel="stylesheet" href="css/homeworkout.css?v=3.8">
 </head>
 <body>
 
@@ -509,7 +509,24 @@
             </div>
           </div>
         </div>
-        <button class="start-day-pill-btn" style="background: #FEE2E2; color: #DC2626; border: none;" onclick="HomeWorkoutApp.handleLogout()">
+
+        <button class="start-day-pill-btn" style="background: #EEF2FF; color: var(--brand-blue); border: 1px solid #C7D2FE; margin-bottom: 10px;" onclick="HomeWorkoutApp.closeAuthModal(); HomeWorkoutApp.openAccountSecurityModal()">
+          🛡️ Account Security & Recovery Email
+        </button>
+
+        <div id="authLogoutConfirmWrap" style="display: none; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 14px; padding: 14px; margin-bottom: 10px; text-align: center;">
+          <p style="margin: 0 0 10px 0; font-size: 0.85rem; font-weight: 700; color: #991B1B;">Log out of this device?</p>
+          <div style="display: flex; gap: 8px;">
+            <button class="start-day-pill-btn" style="background: #DC2626; color: #FFF; padding: 8px 12px; font-size: 0.82rem; flex: 1;" onclick="HomeWorkoutApp.confirmLogout()">
+              Yes, Log Out
+            </button>
+            <button class="start-day-pill-btn" style="background: #FFF; color: var(--text-main); border: 1px solid #D1D5DB; padding: 8px 12px; font-size: 0.82rem; flex: 1;" onclick="HomeWorkoutApp.cancelLogoutPrompt()">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <button class="start-day-pill-btn" id="authLogoutInitialBtn" style="background: #FEE2E2; color: #DC2626; border: none;" onclick="HomeWorkoutApp.showLogoutPrompt()">
           Log Out
         </button>
       </div>
@@ -518,13 +535,25 @@
       <div id="authFormView">
         <div id="authInlineFeedback" style="display: none; padding: 10px 14px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; margin-bottom: 12px; line-height: 1.4;"></div>
 
-        <div class="mode-tab-switcher" style="margin-bottom: 14px;">
+        <!-- Back navigation header shown ONLY in Forgot Password mode -->
+        <div id="authForgotNavRow" style="display: none; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <button type="button" onclick="HomeWorkoutApp.switchAuthMode('login')" style="background: #F1F5F9; border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.8rem; font-weight: 700; color: var(--text-main); cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg> Back to Sign In
+          </button>
+          <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700;">Account Recovery</span>
+        </div>
+
+        <div class="mode-tab-switcher" id="authTabSwitcher" style="margin-bottom: 14px;">
           <button class="mode-tab-btn active" id="authTabLoginBtn" onclick="HomeWorkoutApp.switchAuthMode('login')">
             Sign In
           </button>
           <button class="mode-tab-btn" id="authTabRegisterBtn" onclick="HomeWorkoutApp.switchAuthMode('register')">
             Create Account
           </button>
+        </div>
+
+        <div id="authForgotNotice" style="display: none; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 12px; background: #F8FAFC; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 10px 12px;">
+          🔑 Enter your registered email or athlete username below. We'll send an official password reset link directly to your recovery email inbox.
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
@@ -553,6 +582,12 @@
           Sign In
         </button>
 
+        <div id="authForgotBackWrap" style="display: none; text-align: center; margin-top: 4px; margin-bottom: 8px;">
+          <button type="button" onclick="HomeWorkoutApp.switchAuthMode('login')" style="background: none; border: none; color: var(--brand-blue); font-size: 0.82rem; font-weight: 700; cursor: pointer;">
+            ← Back to Sign In
+          </button>
+        </div>
+
         <div id="authOrGuestWrap">
           <div style="text-align: center; margin: 6px 0; color: var(--text-muted); font-size: 0.75rem; font-weight: 700;">— OR —</div>
 
@@ -560,6 +595,62 @@
             ⚡ Continue as Guest (Train Offline, No Account Needed)
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ACCOUNT SECURITY & RECOVERY EMAIL -->
+  <div class="bottom-sheet-backdrop" id="accountSecurityModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeAccountSecurityModal()">
+    <div class="bottom-sheet-box" style="max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 class="sheet-title" style="margin: 0;">Account Security</h3>
+        <button class="runner-close-btn" onclick="HomeWorkoutApp.closeAccountSecurityModal()" style="font-size: 1.1rem; padding: 4px 8px; border: none; background: transparent; cursor: pointer;">✕</button>
+      </div>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 14px;">
+        Link your verified personal email to enable cloud sync, backup your workout history, and easily reset your password anytime.
+      </p>
+
+      <div id="accountSecurityFeedback" style="display: none; padding: 10px 14px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; margin-bottom: 12px; line-height: 1.4;"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+        <div style="background: #F8FAFC; border: 1px solid var(--border-subtle); border-radius: 14px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #0052FF, #3B82F6); color: #FFF; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem;" id="secAvatarLetter">
+              A
+            </div>
+            <div>
+              <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 700; text-transform: uppercase;">Signed In Athlete</div>
+              <div style="font-size: 0.92rem; font-weight: 800; color: var(--text-main);" id="secActiveUsername">Athlete</div>
+            </div>
+          </div>
+          <span style="font-size: 0.72rem; background: #EEF2FF; color: var(--brand-blue); padding: 4px 8px; border-radius: 8px; font-weight: 800;">Cloud Profile</span>
+        </div>
+
+        <div>
+          <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Personal Recovery Email</label>
+          <input type="email" id="secRecoveryEmailInput" class="hw-search-input" placeholder="you@example.com" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;" onkeydown="if(event.key === 'Enter') HomeWorkoutApp.submitAccountSecurityUpdate()">
+          <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px;">Used for official password reset links and account recovery.</span>
+        </div>
+
+        <div style="border-top: 1px solid var(--border-divider); padding-top: 10px;">
+          <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">
+            Change Password <span style="font-weight: 500; color: var(--text-muted);">(Optional)</span>
+          </label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <input type="password" id="secNewPasswordInput" class="hw-search-input" placeholder="New password (leave blank to keep current)" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;">
+            <input type="password" id="secConfirmPasswordInput" class="hw-search-input" placeholder="Confirm new password" style="background: #FFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 10px 14px; width: 100%;" onkeydown="if(event.key === 'Enter') HomeWorkoutApp.submitAccountSecurityUpdate()">
+          </div>
+          <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px;">Only fill if you want to change your password now.</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button class="start-day-pill-btn" id="secSubmitBtn" style="background: var(--brand-blue); color: #FFF;" onclick="HomeWorkoutApp.submitAccountSecurityUpdate()">
+          Save Security Settings
+        </button>
+        <button class="start-day-pill-btn" style="background: #F3F4F6; color: var(--text-main); border: 1px solid #E5E7EB;" onclick="HomeWorkoutApp.closeAccountSecurityModal()">
+          Cancel
+        </button>
       </div>
     </div>
   </div>
@@ -604,10 +695,10 @@
   </script>
 
   <!-- Application Logic Scripts -->
-  <script src="js/exercises.js?v=3.7"></script>
-  <script src="js/store.js?v=3.7"></script>
-  <script src="js/visuals.js?v=3.7"></script>
-  <script src="js/telemetry.js?v=3.7"></script>
-  <script src="js/homeworkout.js?v=3.7"></script>
+  <script src="js/exercises.js?v=3.8"></script>
+  <script src="js/store.js?v=3.8"></script>
+  <script src="js/visuals.js?v=3.8"></script>
+  <script src="js/telemetry.js?v=3.8"></script>
+  <script src="js/homeworkout.js?v=3.8"></script>
 </body>
 </html>

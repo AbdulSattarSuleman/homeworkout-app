@@ -1609,6 +1609,7 @@ const HomeWorkoutApp = {
 
     // 2. Check if any overlay modal is open (close modal, stay on screen)
     const modalBackdrops = [
+      'accountSecurityModalBackdrop',
       'authModalBackdrop',
       'newPasswordModalBackdrop',
       'levelModalBackdrop',
@@ -2005,6 +2006,10 @@ const HomeWorkoutApp = {
     this.clearAuthFeedback();
     const loginBtn = document.getElementById('authTabLoginBtn');
     const regBtn = document.getElementById('authTabRegisterBtn');
+    const tabSwitcher = document.getElementById('authTabSwitcher');
+    const forgotNavRow = document.getElementById('authForgotNavRow');
+    const forgotNotice = document.getElementById('authForgotNotice');
+    const forgotBackWrap = document.getElementById('authForgotBackWrap');
     const submitBtn = document.getElementById('authSubmitBtn');
     const emailGroup = document.getElementById('authEmailGroup');
     const usernameLabel = document.getElementById('authUsernameLabel');
@@ -2014,11 +2019,12 @@ const HomeWorkoutApp = {
     const orGuestWrap = document.getElementById('authOrGuestWrap');
     const authModalTitle = document.getElementById('authModalTitle');
 
-    if (loginBtn) loginBtn.classList.toggle('active', mode === 'login');
-    if (regBtn) regBtn.classList.toggle('active', mode === 'register');
-
     if (mode === 'forgot') {
-      if (authModalTitle) authModalTitle.textContent = 'Reset Password';
+      if (authModalTitle) authModalTitle.textContent = 'Account Recovery';
+      if (tabSwitcher) tabSwitcher.style.display = 'none';
+      if (forgotNavRow) forgotNavRow.style.display = 'flex';
+      if (forgotNotice) forgotNotice.style.display = 'block';
+      if (forgotBackWrap) forgotBackWrap.style.display = 'block';
       if (loginBtn) loginBtn.classList.remove('active');
       if (regBtn) regBtn.classList.remove('active');
       if (emailGroup) emailGroup.style.display = 'none';
@@ -2026,10 +2032,19 @@ const HomeWorkoutApp = {
       if (forgotLinkWrap) forgotLinkWrap.style.display = 'none';
       if (orGuestWrap) orGuestWrap.style.display = 'none';
       if (usernameLabel) usernameLabel.textContent = 'Registered Email or Username';
-      if (usernameInput) usernameInput.placeholder = 'you@example.com or athlete_name';
+      if (usernameInput) {
+        usernameInput.placeholder = 'you@example.com or athlete_name';
+        usernameInput.focus();
+      }
       if (submitBtn) submitBtn.textContent = 'Send Password Reset Link';
     } else if (mode === 'register') {
       if (authModalTitle) authModalTitle.textContent = 'Create Athlete Account';
+      if (tabSwitcher) tabSwitcher.style.display = 'flex';
+      if (forgotNavRow) forgotNavRow.style.display = 'none';
+      if (forgotNotice) forgotNotice.style.display = 'none';
+      if (forgotBackWrap) forgotBackWrap.style.display = 'none';
+      if (loginBtn) loginBtn.classList.remove('active');
+      if (regBtn) regBtn.classList.add('active');
       if (emailGroup) emailGroup.style.display = 'block';
       if (passwordGroup) passwordGroup.style.display = 'block';
       if (forgotLinkWrap) forgotLinkWrap.style.display = 'none';
@@ -2040,6 +2055,12 @@ const HomeWorkoutApp = {
     } else {
       // login mode
       if (authModalTitle) authModalTitle.textContent = 'Sign In to Your Account';
+      if (tabSwitcher) tabSwitcher.style.display = 'flex';
+      if (forgotNavRow) forgotNavRow.style.display = 'none';
+      if (forgotNotice) forgotNotice.style.display = 'none';
+      if (forgotBackWrap) forgotBackWrap.style.display = 'none';
+      if (loginBtn) loginBtn.classList.add('active');
+      if (regBtn) regBtn.classList.remove('active');
       if (emailGroup) emailGroup.style.display = 'none';
       if (passwordGroup) passwordGroup.style.display = 'block';
       if (forgotLinkWrap) forgotLinkWrap.style.display = 'block';
@@ -2069,10 +2090,11 @@ const HomeWorkoutApp = {
       if (this.authMode === 'forgot') {
         const target = u;
         if (!target) {
-          throw new Error('Please enter your email address or username to receive a reset link.');
+          throw new Error('Please enter your email address or athlete username.');
         }
-        await HomeWorkoutStore.sendPasswordResetEmail(target);
-        this.showAuthFeedback(`📩 Password reset link sent! Check your email inbox to reset your password.`, 'success');
+        const res = await HomeWorkoutStore.sendPasswordResetEmail(target);
+        const masked = res.email ? res.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : target;
+        this.showAuthFeedback(`📩 Password reset link sent to ${masked}! Check your email inbox (and spam folder) to reset your password.`, 'success');
       } else if (this.authMode === 'login') {
         await HomeWorkoutStore.login(u, p);
         this.showAuthFeedback(`Welcome back, ${u}! Signed in successfully.`, 'success');
@@ -2137,40 +2159,137 @@ const HomeWorkoutApp = {
     }
   },
 
-  handleLogout() {
+  showLogoutPrompt() {
+    const wrap = document.getElementById('authLogoutConfirmWrap');
+    const initBtn = document.getElementById('authLogoutInitialBtn');
+    if (wrap) wrap.style.display = 'block';
+    if (initBtn) initBtn.style.display = 'none';
+  },
+
+  cancelLogoutPrompt() {
+    const wrap = document.getElementById('authLogoutConfirmWrap');
+    const initBtn = document.getElementById('authLogoutInitialBtn');
+    if (wrap) wrap.style.display = 'none';
+    if (initBtn) initBtn.style.display = 'block';
+  },
+
+  confirmLogout() {
     const user = HomeWorkoutStore.getUser();
-    if (confirm('Log out of this device?')) {
-      if (typeof TelemetryTracker !== 'undefined' && user) {
-        TelemetryTracker.trackAuth('logout', user.username);
-      }
-      HomeWorkoutStore.logout();
-      this.closeAuthModal();
-      this.renderHeader();
-      this.renderWeeklyGoalCard();
-      this.renderBodyFocus();
-      this.renderSettingsScreen();
+    if (typeof TelemetryTracker !== 'undefined' && user) {
+      TelemetryTracker.trackAuth('logout', user.username);
+    }
+    HomeWorkoutStore.logout();
+    this.cancelLogoutPrompt();
+    this.closeAuthModal();
+    this.renderHeader();
+    this.renderWeeklyGoalCard();
+    this.renderBodyFocus();
+    this.renderSettingsScreen();
+  },
+
+  handleLogout() {
+    this.showLogoutPrompt();
+  },
+
+  // ========================================================
+  // ACCOUNT SECURITY & RECOVERY EMAIL MODAL
+  // ========================================================
+  openAccountSecurityModal() {
+    const user = HomeWorkoutStore.getUser();
+    const usernameEl = document.getElementById('secActiveUsername');
+    const avatarEl = document.getElementById('secAvatarLetter');
+    if (usernameEl) {
+      usernameEl.textContent = user.username ? '@' + user.username : 'Athlete';
+    }
+    if (avatarEl) {
+      avatarEl.textContent = (user.username ? user.username[0] : 'A').toUpperCase();
+    }
+
+    const emailInput = document.getElementById('secRecoveryEmailInput');
+    if (emailInput) {
+      const currentEmail = (user.email && !user.email.endsWith('@homeworkout.app')) ? user.email : '';
+      emailInput.value = currentEmail;
+    }
+
+    const passInput = document.getElementById('secNewPasswordInput');
+    if (passInput) passInput.value = '';
+    const confirmInput = document.getElementById('secConfirmPasswordInput');
+    if (confirmInput) confirmInput.value = '';
+
+    const feedback = document.getElementById('accountSecurityFeedback');
+    if (feedback) {
+      feedback.style.display = 'none';
+      feedback.innerHTML = '';
+    }
+
+    this.openModal('accountSecurityModalBackdrop', 'security');
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('account_security_modal');
     }
   },
 
-  async promptAccountSecurityUpdate() {
-    const user = HomeWorkoutStore.getUser();
-    const currentEmail = (user.email && !user.email.endsWith('@homeworkout.app')) ? user.email : '';
-    const newEmail = prompt('Enter your recovery email address (used for password reset & cloud sync):', currentEmail);
-    if (newEmail === null) return;
+  closeAccountSecurityModal(fromPop = false) {
+    this.closeModal('accountSecurityModalBackdrop', fromPop);
+  },
 
-    let newPassword = null;
-    const changePass = confirm('Would you also like to update your account password now?');
-    if (changePass) {
-      newPassword = prompt('Enter your new password (minimum 8 characters):');
-      if (newPassword === null) return;
+  async submitAccountSecurityUpdate() {
+    const emailInput = document.getElementById('secRecoveryEmailInput');
+    const passInput = document.getElementById('secNewPasswordInput');
+    const confirmInput = document.getElementById('secConfirmPasswordInput');
+    const feedback = document.getElementById('accountSecurityFeedback');
+    const btn = document.getElementById('secSubmitBtn');
+
+    const showMsg = (msg, isErr = true) => {
+      if (!feedback) return;
+      feedback.style.display = 'block';
+      feedback.style.background = isErr ? '#FEE2E2' : '#ECFDF5';
+      feedback.style.border = isErr ? '1px solid #FCA5A5' : '1px solid #6EE7B7';
+      feedback.style.color = isErr ? '#B91C1C' : '#047857';
+      feedback.innerHTML = (isErr ? '⚠️ ' : '✅ ') + msg;
+    };
+
+    const newEmail = emailInput ? emailInput.value.trim() : '';
+    const newPass = passInput ? passInput.value.trim() : '';
+    const confirmPass = confirmInput ? confirmInput.value.trim() : '';
+
+    if (!newEmail || !newEmail.includes('@') || !newEmail.includes('.')) {
+      showMsg('Please enter a valid personal email address (e.g. you@example.com).');
+      return;
+    }
+
+    if (newPass) {
+      if (newPass.length < 8) {
+        showMsg('Password must be at least 8 characters long.');
+        return;
+      }
+      if (newPass !== confirmPass) {
+        showMsg('New passwords do not match. Please re-enter.');
+        return;
+      }
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Saving Changes...';
     }
 
     try {
-      await HomeWorkoutStore.updateUserAccount(newEmail, newPassword);
-      alert('✅ Account updated successfully!');
+      await HomeWorkoutStore.updateUserAccount(newEmail, newPass || null);
+      showMsg('Account security updated successfully! Recovery email linked.', false);
       this.renderSettingsScreen();
+      setTimeout(() => {
+        this.closeAccountSecurityModal();
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Save Security Settings';
+        }
+      }, 1200);
     } catch (err) {
-      alert('⚠️ ' + err.message);
+      showMsg(err.message || 'Could not update account security.');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Save Security Settings';
+      }
     }
   },
 
@@ -2213,7 +2332,7 @@ const HomeWorkoutApp = {
               <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Account & Recovery Email</h4>
               <span style="font-size: 0.8rem; color: var(--text-muted);">${hasRealEmail ? '📧 ' + user.email : '⚠️ No recovery email linked'}</span>
             </div>
-            <button class="level-select-pill" onclick="HomeWorkoutApp.promptAccountSecurityUpdate()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <button class="level-select-pill" onclick="HomeWorkoutApp.openAccountSecurityModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
               <span>${hasRealEmail ? 'Edit' : 'Link Email'}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6"></polyline>
