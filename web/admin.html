@@ -634,13 +634,13 @@
       </div>
 
       <div class="gate-input-group">
-        <label class="gate-label">Admin Username</label>
-        <input type="text" id="adminUserField" class="gate-input" value="admin" placeholder="Username">
+        <label class="gate-label">Admin Email</label>
+        <input type="text" id="adminUserField" class="gate-input" placeholder="you@example.com" autocomplete="username">
       </div>
 
       <div class="gate-input-group">
         <label class="gate-label">Admin Password</label>
-        <input type="password" id="adminPassField" class="gate-input" placeholder="Password" onkeydown="if(event.key === 'Enter') AdminApp.login()">
+        <input type="password" id="adminPassField" class="gate-input" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key === 'Enter') AdminApp.login()">
       </div>
 
       <button class="btn btn-primary" style="width: 100%; padding: 12px; justify-content: center; margin-top: 10px; font-size: 0.88rem;" onclick="AdminApp.login()">
@@ -661,8 +661,8 @@
       </div>
 
       <div style="margin-top: 14px; font-size: 0.72rem; color: var(--text-muted); text-align: center; line-height: 1.45;">
-        To log into this local Command Center, launch <code style="color: var(--accent-emerald); background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 4px;">python server.py</code> locally on your machine.<br>
-        Local Credentials: <strong style="color: #FFF;">admin</strong> / <strong style="color: #FFF;">admin123</strong>
+        Only accounts marked as admin in the database can sign in here.<br>
+        For the local <code style="color: var(--accent-emerald); background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 4px;">python server.py</code> backend, use the admin password printed when the server first starts.
       </div>
     </div>
   </div>
@@ -899,6 +899,35 @@
       },
       supabaseClient: null,
 
+      // Escape any user-supplied value before it goes into innerHTML
+      esc(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      },
+
+      // Returns the signed-in Supabase session only if that account has is_admin = true.
+      // The real protection is the database's row-level security; this check just keeps
+      // non-admin accounts out of the panel UI.
+      async getVerifiedAdminSession() {
+        const supa = this.initSupabase();
+        if (!supa) return null;
+        const { data: sessionData } = await supa.auth.getSession();
+        const session = sessionData ? sessionData.session : null;
+        if (!session || !session.user) return null;
+        const { data: profile, error } = await supa
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (error || !profile || profile.is_admin !== true) return null;
+        return session;
+      },
+
       initSupabase() {
         if (this.supabaseClient) return this.supabaseClient;
         if (typeof window !== 'undefined' && window.supabase && window.supabase.createClient) {
@@ -985,25 +1014,18 @@
 
       async verifyToken() {
         if (this.isSupabaseMode) {
-          if (this.token && (this.token.startsWith('admin_session_') || this.token === 'hw_admin_secret_token')) {
-            this.showGate(false);
-            this.updateServerBadge();
-            this.startAutoRefresh();
-            this.refreshAll();
-            return;
-          }
-          const supa = this.initSupabase();
-          if (supa && this.token) {
-            try {
-              const { data, error } = await supa.auth.getUser(this.token);
-              if (!error && data && data.user) {
-                this.showGate(false);
-                this.updateServerBadge();
-                this.startAutoRefresh();
-                this.refreshAll();
-                return;
-              }
-            } catch (e) {}
+          try {
+            const session = await this.getVerifiedAdminSession();
+            if (session) {
+              this.token = session.access_token;
+              this.showGate(false);
+              this.updateServerBadge();
+              this.startAutoRefresh();
+              this.refreshAll();
+              return;
+            }
+          } catch (e) {
+            console.warn('[Admin Supabase] Session check failed:', e);
           }
           this.logout();
           return;
@@ -1040,25 +1062,7 @@
 
         alertEl.style.display = 'none';
 
-        // 0. Primary Administrator Check (Works on GitHub Pages & Static hosting without local server)
-        const uLower = username.toLowerCase();
-        const isAdminCreds = (uLower === 'admin' && password === 'admin123') ||
-                             (uLower === 'superadmin' && password === 'admin123') ||
-                             (uLower === 'abdulsattar' && password === 'admin123');
-
-        if (isAdminCreds) {
-          this.token = 'admin_session_' + Date.now().toString(36);
-          this.isSupabaseMode = true;
-          localStorage.setItem('hw_admin_token', this.token);
-          localStorage.setItem('hw_admin_mode', 'supabase');
-          this.showGate(false);
-          this.updateServerBadge();
-          this.startAutoRefresh();
-          this.refreshAll();
-          return;
-        }
-
-        // 1. Authenticate with Supabase Cloud (Live URL GitHub Pages mode)
+        // 1. Authenticate with Supabase Cloud, then require is_admin on the profile
         const supa = this.initSupabase();
         if (supa) {
           try {
@@ -1069,7 +1073,14 @@
             });
 
             if (!error && data && data.session) {
-              this.token = data.session.access_token;
+              const adminSession = await this.getVerifiedAdminSession();
+              if (!adminSession) {
+                try { await supa.auth.signOut(); } catch (e) {}
+                alertEl.textContent = 'This account does not have admin access.';
+                alertEl.style.display = 'block';
+                return;
+              }
+              this.token = adminSession.access_token;
               this.isSupabaseMode = true;
               localStorage.setItem('hw_admin_token', this.token);
               localStorage.setItem('hw_admin_mode', 'supabase');
@@ -1114,6 +1125,9 @@
       },
 
       logout() {
+        if (this.isSupabaseMode && this.supabaseClient) {
+          try { this.supabaseClient.auth.signOut(); } catch (e) {}
+        }
         localStorage.removeItem('hw_admin_token');
         localStorage.removeItem('hw_admin_mode');
         this.token = null;
@@ -1232,6 +1246,7 @@
       },
 
       renderDevicesTab(screens, devices) {
+        const esc = this.esc;
         const screensEl = document.getElementById('screenResolutionsList');
         if (screensEl) {
           if (screens.length === 0) {
@@ -1239,9 +1254,9 @@
           } else {
             screensEl.innerHTML = screens.map(s => `
               <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">📐 ${s.screen_resolution}</span>
+                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">📐 ${esc(s.screen_resolution)}</span>
                 <span style="background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;">
-                  ${s.count} sessions
+                  ${esc(s.count)} sessions
                 </span>
               </div>
             `).join('');
@@ -1255,9 +1270,9 @@
           } else {
             devicesEl.innerHTML = devices.map(d => `
               <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">💻 ${d.device_type}</span>
+                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">💻 ${esc(d.device_type)}</span>
                 <span style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;">
-                  ${d.count} sessions
+                  ${esc(d.count)} sessions
                 </span>
               </div>
             `).join('');
@@ -1397,6 +1412,7 @@
       },
 
       renderActivities(list) {
+        const esc = this.esc;
         const container = document.getElementById('activityStreamList');
         if (!container) return;
 
@@ -1456,17 +1472,17 @@
           return `
             <div class="activity-card">
               <div class="act-left">
-                <span class="act-type-badge ${badgeClass}">${icon} ${typeLabel}</span>
+                <span class="act-type-badge ${badgeClass}">${icon} ${esc(typeLabel)}</span>
                 <div>
                   <div class="act-user-tag">
-                    ${a.username ? `@${a.username}` : '<span style="color: var(--text-muted);">@anonymous_guest</span>'}
+                    ${a.username ? `@${esc(a.username)}` : '<span style="color: var(--text-muted);">@anonymous_guest</span>'}
                   </div>
-                  <div class="act-details" title="${detailText}">${detailText}</div>
+                  <div class="act-details" title="${esc(detailText)}">${esc(detailText)}</div>
                 </div>
               </div>
               <div class="act-right">
-                ${screenRes ? `<span class="act-device-pill">📐 ${screenRes}</span>` : ''}
-                ${a.device_type ? `<span class="act-device-pill">${a.device_type}</span>` : ''}
+                ${screenRes ? `<span class="act-device-pill">📐 ${esc(screenRes)}</span>` : ''}
+                ${a.device_type ? `<span class="act-device-pill">${esc(a.device_type)}</span>` : ''}
                 <span>${dateTimeStr}</span>
               </div>
             </div>
@@ -1526,6 +1542,9 @@
       },
 
       renderUsers(usersList) {
+        const esc = this.esc;
+        // Safe value for an inline onclick handler: JS string literal, then HTML-escaped
+        const jsArg = (v) => esc(JSON.stringify(String(v)));
         const tbody = document.getElementById('userTableBody');
         const mobileContainer = document.getElementById('mobileUserCards');
         if (!tbody) return;
@@ -1551,7 +1570,7 @@
           const userIdStr = String(u.id);
           const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
           const userWorkouts = (this.cachedActivities || []).filter(a => 
-            a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === u.username.toLowerCase()))
+            a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === (u.username || '').toLowerCase()))
           );
           const workoutCount = u.workout_count !== undefined ? u.workout_count : userWorkouts.length;
 
@@ -1559,12 +1578,12 @@
             <tr>
               <td>
                 <div style="font-weight: 800; color: #FFF; display: flex; align-items: center; gap: 6px;">
-                  @${u.username}
+                  @${esc(u.username)}
                   ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                   ${u.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO</span>' : ''}
                   ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">GUEST</span>' : ''}
                 </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${shortId}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${esc(shortId)}</div>
               </td>
               <td>
                 <div style="font-weight: 600; color: #FFF; font-size: 0.8rem;">📅 ${createdDateStr}</div>
@@ -1574,15 +1593,15 @@
               </td>
               <td>
                 <span style="font-weight: 700; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-size: 0.78rem;">
-                  ${u.fitness_level || 'Intermediate'}
+                  ${esc(u.fitness_level || 'Intermediate')}
                 </span>
               </td>
-              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${u.streak_count || 0}</span></td>
-              <td><span style="font-weight: 700;">${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5}</span></td>
-              <td><strong style="color: var(--accent-emerald);">${workoutCount}</strong></td>
-              <td><span class="act-device-pill">${u.last_device_type || 'Cloud Sync'}</span></td>
+              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${esc(u.streak_count || 0)}</span></td>
+              <td><span style="font-weight: 700;">${esc(u.weekly_completed_count || 0)}/${esc(u.weekly_goal_target || 5)}</span></td>
+              <td><strong style="color: var(--accent-emerald);">${esc(workoutCount)}</strong></td>
+              <td><span class="act-device-pill">${esc(u.last_device_type || 'Cloud Sync')}</span></td>
               <td>
-                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.75rem;" onclick="AdminApp.inspectUser('${userIdStr}')">
+                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.75rem;" onclick="AdminApp.inspectUser(${jsArg(userIdStr)})">
                   🔍 Inspect
                 </button>
               </td>
@@ -1604,7 +1623,7 @@
             const userIdStr = String(u.id);
             const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
             const userWorkouts = (this.cachedActivities || []).filter(a => 
-              a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === u.username.toLowerCase()))
+              a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === (u.username || '').toLowerCase()))
             );
             const workoutCount = u.workout_count !== undefined ? u.workout_count : userWorkouts.length;
 
@@ -1613,15 +1632,15 @@
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
                   <div>
                     <div style="font-weight: 800; font-size: 1rem; color: #FFF; display: flex; align-items: center; gap: 6px;">
-                      @${u.username}
+                      @${esc(u.username)}
                       ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                       ${u.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO</span>' : ''}
                       ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">GUEST</span>' : ''}
                     </div>
-                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">UUID: #${shortId}</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">UUID: #${esc(shortId)}</div>
                   </div>
                   <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 3px 8px; border-radius: 6px; font-weight: 700;">
-                    ${u.fitness_level || 'Intermediate'}
+                    ${esc(u.fitness_level || 'Intermediate')}
                   </span>
                 </div>
 
@@ -1637,18 +1656,18 @@
                   <div>
                     <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">🔥 Streak & Goal</div>
                     <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-amber); margin-top: 2px;">
-                      ${u.streak_count || 0}d • ${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5} wk
+                      ${esc(u.streak_count || 0)}d • ${esc(u.weekly_completed_count || 0)}/${esc(u.weekly_goal_target || 5)} wk
                     </div>
                   </div>
                   <div>
                     <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">🏆 Workouts Done</div>
                     <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-emerald); margin-top: 2px;">
-                      ${workoutCount} completed
+                      ${esc(workoutCount)} completed
                     </div>
                   </div>
                 </div>
 
-                <button class="btn btn-secondary" style="width: 100%; justify-content: center; padding: 9px; font-size: 0.8rem; margin-top: 4px;" onclick="AdminApp.inspectUser('${userIdStr}')">
+                <button class="btn btn-secondary" style="width: 100%; justify-content: center; padding: 9px; font-size: 0.8rem; margin-top: 4px;" onclick="AdminApp.inspectUser(${jsArg(userIdStr)})">
                   🔍 Inspect Athlete Activity & Searches
                 </button>
               </div>
@@ -1663,7 +1682,7 @@
           this.renderUsers(this.cachedUsers);
           return;
         }
-        const filtered = this.cachedUsers.filter(u => u.username.toLowerCase().includes(query));
+        const filtered = this.cachedUsers.filter(u => (u.username || '').toLowerCase().includes(query));
         this.renderUsers(filtered);
       },
 
@@ -1673,8 +1692,9 @@
         const title = document.getElementById('detailModalTitle');
         const body = document.getElementById('detailModalBody');
         if (!modal || !title || !body) return;
+        const esc = this.esc;
 
-        title.innerHTML = `👤 Inspecting Athlete: <strong>@${user.username}</strong>`;
+        title.innerHTML = `👤 Inspecting Athlete: <strong>@${esc(user.username)}</strong>`;
 
         let workouts = [];
         let activities = [];
@@ -1705,7 +1725,7 @@
         } else {
           // Local Python server fallback
           try {
-            const res = await fetch(this.apiUrl(`/api/admin/user/${userId}/detail`), {
+            const res = await fetch(this.apiUrl(`/api/admin/user/${encodeURIComponent(userId)}/detail`), {
               headers: { 'Authorization': `Bearer ${this.token}` }
             });
             if (res.ok) {
@@ -1734,14 +1754,14 @@
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 10px;">
               <div>
                 <div style="font-size: 1.15rem; font-weight: 900; color: #FFF; display: flex; align-items: center; gap: 8px;">
-                  @${user.username}
+                  @${esc(user.username)}
                   ${user.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                   ${user.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO ATHLETE</span>' : '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">FREE TIER</span>'}
                 </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; font-family: monospace;">UUID: ${user.id}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; font-family: monospace;">UUID: ${esc(user.id)}</div>
               </div>
               <span style="font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 4px 10px; border-radius: 6px; font-weight: 800;">
-                ${user.fitness_level || 'Intermediate'} Level
+                ${esc(user.fitness_level || 'Intermediate')} Level
               </span>
             </div>
 
@@ -1762,11 +1782,11 @@
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Current Streak</div>
-              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-amber); margin-top: 3px;">🔥 ${user.streak_count || 0}d</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-amber); margin-top: 3px;">🔥 ${esc(user.streak_count || 0)}d</div>
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
-              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-blue); margin-top: 3px;">${user.weekly_completed_count || 0}/${user.weekly_goal_target || 5}</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-blue); margin-top: 3px;">${esc(user.weekly_completed_count || 0)}/${esc(user.weekly_goal_target || 5)}</div>
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Workouts Done</div>
@@ -1774,7 +1794,7 @@
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Location Preference</div>
-              <div style="font-size: 1rem; font-weight: 800; color: #FFF; margin-top: 5px; text-transform: capitalize;">🏠 ${user.active_location_id || 'home'}</div>
+              <div style="font-size: 1rem; font-weight: 800; color: #FFF; margin-top: 5px; text-transform: capitalize;">🏠 ${esc(user.active_location_id || 'home')}</div>
             </div>
           </div>
 
@@ -1807,33 +1827,33 @@
                   badgeBg = 'rgba(56, 189, 248, 0.15)';
                   badgeColor = 'var(--accent-blue)';
                   const scr = (a.details && (a.details.screen || a.details.tab)) || 'Screen';
-                  headline = `Viewed Screen: <strong>${scr}</strong>`;
-                  subtext = a.details && a.details.tab ? `Tab: ${a.details.tab}` : 'Navigated by athlete';
+                  headline = `Viewed Screen: <strong>${esc(scr)}</strong>`;
+                  subtext = esc(a.details && a.details.tab ? `Tab: ${a.details.tab}` : 'Navigated by athlete');
                 } else if (a.event_type === 'search_query' || (a.details && a.details.query)) {
                   badge = '🔍 SEARCH';
                   badgeBg = 'rgba(234, 179, 8, 0.15)';
                   badgeColor = 'var(--accent-amber)';
-                  headline = `Searched query: <strong>"${a.details.query}"</strong>`;
-                  subtext = `Origin: ${a.details.originScreen || 'App'}`;
+                  headline = `Searched query: <strong>"${esc(a.details && a.details.query)}"</strong>`;
+                  subtext = esc(`Origin: ${(a.details && a.details.originScreen) || 'App'}`);
                 } else if (a.event_type === 'WORKOUT_COMPLETE' || a.event_category === 'workout') {
                   badge = '🏋️ WORKOUT';
                   badgeBg = 'rgba(16, 185, 129, 0.15)';
                   badgeColor = 'var(--accent-emerald)';
-                  headline = `Completed: <strong>${(a.details && a.details.workoutTitle) || 'Workout Session'}</strong>`;
-                  subtext = (a.details && a.details.action) || 'Finished session';
+                  headline = `Completed: <strong>${esc((a.details && a.details.workoutTitle) || 'Workout Session')}</strong>`;
+                  subtext = esc((a.details && a.details.action) || 'Finished session');
                 } else if (a.event_type === 'ACCOUNT_CREATED' || a.event_category === 'auth') {
                   badge = '👤 ACCOUNT';
                   badgeBg = 'rgba(168, 85, 247, 0.15)';
                   badgeColor = 'var(--accent-purple)';
                   headline = `Account Created on App`;
-                  subtext = (a.details && a.details.action) || 'Registered profile';
+                  subtext = esc((a.details && a.details.action) || 'Registered profile');
                 } else {
-                  headline = `Event: ${a.event_type}`;
-                  subtext = JSON.stringify(a.details || {});
+                  headline = `Event: ${esc(a.event_type)}`;
+                  subtext = esc(JSON.stringify(a.details || {}));
                 }
 
                 const evTime = a.created_at ? new Date(a.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }) : '—';
-                const devicePill = a.device_type ? `<span class="act-device-pill" style="font-size: 0.65rem;">${a.device_type}</span>` : '';
+                const devicePill = a.device_type ? `<span class="act-device-pill" style="font-size: 0.65rem;">${esc(a.device_type)}</span>` : '';
 
                 return `
                   <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
@@ -1869,13 +1889,13 @@
               ` : workouts.map(w => `
                 <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 12px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                   <div>
-                    <strong style="color: #FFF; font-size: 0.88rem;">${w.workout_title}</strong>
+                    <strong style="color: #FFF; font-size: 0.88rem;">${esc(w.workout_title)}</strong>
                     <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
-                      📅 ${w.completed_at} • ⏱️ ${w.duration_minutes} min • 🔥 ${w.calories_burned} kcal
+                      📅 ${esc(w.completed_at)} • ⏱️ ${esc(w.duration_minutes)} min • 🔥 ${esc(w.calories_burned)} kcal
                     </div>
                   </div>
                   <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 3px 8px; border-radius: 4px; white-space: nowrap;">
-                    ${(w.exercises || []).length} Exercises
+                    ${esc(Array.isArray(w.exercises) ? w.exercises.length : 0)} Exercises
                   </span>
                 </div>
               `).join('')}
