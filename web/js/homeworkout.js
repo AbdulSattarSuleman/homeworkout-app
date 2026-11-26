@@ -44,17 +44,31 @@ const HomeWorkoutApp = {
       await HomeWorkoutStore.syncFromCloud();
     } catch (e) {}
 
+    // Match the Body Focus filters to the training plan, if there is one
+    const plan = HomeWorkoutStore.getPlan();
+    if (plan) {
+      this.activeFocusLevel = plan.level || this.activeFocusLevel;
+      if (plan.location === 'home') this.activeFocusLocation = 'Home';
+      if (plan.location === 'gym') this.activeFocusLocation = 'Gym';
+    }
+
     this.renderHeader();
+    this.renderTodayCard();
     this.renderWeeklyGoalCard();
     this.renderChallengeCarousel();
     this.renderBodyFocus();
     this.bindEvents();
 
     // 3. Detect if user opened the page from a password recovery link
+    const isRecoveryLink = (window.location.hash || '').includes('type=recovery');
     this.checkForPasswordRecoveryHash();
+
+    // 4. First visit: ask the 4 plan questions
+    if (!isRecoveryLink) this.maybeShowOnboarding();
   },
 
   onDatabaseLoaded() {
+    this.renderTodayCard();
     this.renderBodyFocus();
     this.renderExplorer();
   },
@@ -215,6 +229,302 @@ const HomeWorkoutApp = {
     this.renderWeeklyGoalCard();
   },
 
+  // ========================================================
+  // GOAL-BASED PLAN: 4-QUESTION SETUP
+  // ========================================================
+  ob: null,
+
+  maybeShowOnboarding() {
+    const user = HomeWorkoutStore.getUser();
+    if (!HomeWorkoutStore.getPlan() && !user.planSkipped) {
+      this.openOnboarding();
+    }
+  },
+
+  openOnboarding({ editing = false } = {}) {
+    const overlay = document.getElementById('onboardingOverlay');
+    if (!overlay || typeof TrainingPlan === 'undefined') return;
+    const plan = HomeWorkoutStore.getPlan();
+    this.ob = {
+      step: 1,
+      editing,
+      answers: {
+        goal: plan ? plan.goal : null,
+        location: plan ? plan.location : null,
+        level: plan ? plan.level : null,
+        daysPerWeek: plan ? plan.daysPerWeek : 3,
+        minutes: plan ? plan.minutes : 45
+      }
+    };
+    overlay.classList.add('active');
+    if (editing) this.pushNavState({ modal: 'onboardingOverlay' }, 'Plan setup', '#plan-setup');
+    this.renderOnboarding();
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackScreen('plan_setup', editing ? 'edit' : 'first_run');
+    }
+  },
+
+  closeOnboarding(fromPop = false) {
+    const overlay = document.getElementById('onboardingOverlay');
+    if (overlay) overlay.classList.remove('active');
+    if (!fromPop && typeof window !== 'undefined' && window.history && window.history.state && window.history.state.modal === 'onboardingOverlay') {
+      window.history.back();
+    }
+    this.ob = null;
+  },
+
+  skipOnboarding() {
+    HomeWorkoutStore.skipPlanSetup();
+    this.closeOnboarding();
+    this.renderTodayCard();
+  },
+
+  obChoose(key, value) {
+    if (!this.ob) return;
+    this.ob.answers[key] = value;
+    this.renderOnboarding();
+    // Single-choice questions move on by themselves
+    if (['goal', 'location', 'level'].includes(key)) {
+      const stepAtTap = this.ob.step;
+      setTimeout(() => {
+        if (this.ob && this.ob.step === stepAtTap && this.ob.step < 4) {
+          this.ob.step++;
+          this.renderOnboarding();
+        }
+      }, 200);
+    }
+  },
+
+  obBack() {
+    if (this.ob && this.ob.step > 1 && this.ob.step <= 4) {
+      this.ob.step--;
+      this.renderOnboarding();
+    }
+  },
+
+  obFinish() {
+    if (!this.ob) return;
+    const a = this.ob.answers;
+    if (!a.goal || !a.location || !a.level || !a.daysPerWeek || !a.minutes) return;
+    HomeWorkoutStore.savePlan(a);
+
+    // Keep the rest of the app in line with the answers
+    this.activeFocusLevel = a.level;
+    if (a.location !== 'both') this.activeFocusLocation = a.location === 'home' ? 'Home' : 'Gym';
+
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.logEvent('plan_created', 'onboarding', {
+        goal: a.goal, location: a.location, level: a.level,
+        daysPerWeek: Number(a.daysPerWeek), minutes: Number(a.minutes)
+      });
+    }
+    this.ob.step = 5;
+    this.renderOnboarding();
+  },
+
+  obDone() {
+    this.closeOnboarding();
+    this.renderHeader();
+    this.renderWeeklyGoalCard();
+    this.renderBodyFocus({ forceRefresh: true });
+    if (this.currentTab !== 'training') {
+      this.switchTab('training');
+    } else {
+      this.renderTodayCard();
+      const scroller = document.querySelector('.hw-main-scroll');
+      if (scroller) scroller.scrollTop = 0;
+    }
+  },
+
+  renderOnboarding() {
+    const overlay = document.getElementById('onboardingOverlay');
+    if (!overlay || !this.ob) return;
+    const P = TrainingPlan;
+    const { step, answers, editing } = this.ob;
+
+    const option = (key, opt) => `
+      <button class="ob-option ${String(answers[key]) === String(opt.id) ? 'selected' : ''}" onclick="HomeWorkoutApp.obChoose('${key}', '${opt.id}')">
+        <span class="ob-option-icon">${opt.icon}</span>
+        <span class="ob-option-text"><strong>${opt.label}</strong><small>${opt.subtitle}</small></span>
+        <span class="ob-option-check">✓</span>
+      </button>`;
+
+    const chip = (key, value, label) => `
+      <button class="ob-chip ${Number(answers[key]) === value ? 'selected' : ''}" onclick="HomeWorkoutApp.obChoose('${key}', ${value})">${label}</button>`;
+
+    let body = '';
+    if (step === 1) {
+      body = `
+        <h2 class="ob-title">What's your main goal?</h2>
+        <p class="ob-sub">Your workouts will be built around it.</p>
+        <div class="ob-options">${Object.values(P.GOALS).map(g => option('goal', g)).join('')}</div>`;
+    } else if (step === 2) {
+      body = `
+        <h2 class="ob-title">Where will you train?</h2>
+        <p class="ob-sub">You'll only get exercises for the equipment you have.</p>
+        <div class="ob-options">${Object.values(P.LOCATIONS).map(l => option('location', l)).join('')}</div>`;
+    } else if (step === 3) {
+      body = `
+        <h2 class="ob-title">How experienced are you?</h2>
+        <p class="ob-sub">This sets how hard your workouts are.</p>
+        <div class="ob-options">${Object.values(P.LEVELS).map(l => option('level', l)).join('')}</div>`;
+    } else if (step === 4) {
+      body = `
+        <h2 class="ob-title">How often can you train?</h2>
+        <p class="ob-sub">Pick what you can really stick to. You can change it any time.</p>
+        <div class="ob-field-label">Days per week</div>
+        <div class="ob-chip-row">${P.DAY_OPTIONS.map(n => chip('daysPerWeek', n, n)).join('')}</div>
+        <div class="ob-field-label">Time per workout</div>
+        <div class="ob-chip-row">${P.MINUTE_OPTIONS.map(m => chip('minutes', m, `${m} min`)).join('')}</div>
+        <div class="ob-split-hint">📅 ${P.getSplitName(answers.goal, answers.daysPerWeek)} plan · ${P.EXERCISES_PER_SESSION[answers.minutes] || 5} exercises per workout</div>
+        <button class="ob-primary-btn" onclick="HomeWorkoutApp.obFinish()">Create my plan</button>`;
+    } else {
+      const plan = HomeWorkoutStore.getPlan();
+      const goal = P.GOALS[plan.goal];
+      const loc = P.LOCATIONS[plan.location];
+      body = `
+        <div class="ob-done-icon">🎉</div>
+        <h2 class="ob-title" style="text-align: center;">Your plan is ready</h2>
+        <div class="ob-summary-pills">
+          <span>${goal.icon} ${goal.label}</span>
+          <span>📅 ${plan.daysPerWeek} days a week</span>
+          <span>${loc.icon} ${loc.label}</span>
+          <span>⏱️ ${plan.minutes} min</span>
+        </div>
+        <div class="ob-week">
+          <div class="ob-week-title">Your week · ${P.getSplitName(plan.goal, plan.daysPerWeek)}</div>
+          ${P.getWeekOverview(plan).map(d => `
+            <div class="ob-week-row">
+              <span class="ob-day-num">Day ${d.dayNumber}</span>
+              <div><strong>${d.name}</strong><small>${d.focus}</small></div>
+            </div>`).join('')}
+        </div>
+        <p class="ob-tip">💡 ${goal.tip}</p>
+        <button class="ob-primary-btn" onclick="HomeWorkoutApp.obDone()">Start training</button>`;
+    }
+
+    const showHeader = step <= 4;
+    overlay.innerHTML = `
+      <div class="ob-screen">
+        ${showHeader ? `
+          <div class="ob-header">
+            <button class="ob-back-btn" onclick="HomeWorkoutApp.obBack()" style="visibility: ${step > 1 ? 'visible' : 'hidden'};" aria-label="Back">‹</button>
+            <div class="ob-progress" aria-label="Step ${step} of 4"><div class="ob-progress-fill" style="width: ${step * 25}%;"></div></div>
+            ${editing
+              ? `<button class="ob-skip-btn" onclick="HomeWorkoutApp.closeOnboarding()">Cancel</button>`
+              : `<button class="ob-skip-btn" onclick="HomeWorkoutApp.skipOnboarding()">Skip</button>`}
+          </div>
+          <div class="ob-step-count">Step ${step} of 4</div>` : ''}
+        <div class="ob-body">${body}</div>
+      </div>`;
+  },
+
+  // ========================================================
+  // GOAL-BASED PLAN: TODAY'S WORKOUT CARD
+  // ========================================================
+  renderTodayCard() {
+    const el = document.getElementById('todayPlanCard');
+    if (!el || typeof TrainingPlan === 'undefined') return;
+    const plan = HomeWorkoutStore.getPlan();
+
+    if (!plan) {
+      el.innerHTML = `
+        <div class="today-card today-empty">
+          <div class="today-empty-row">
+            <span class="today-empty-icon">🎯</span>
+            <div>
+              <h3 class="today-empty-title">Get your personal plan</h3>
+              <p class="today-empty-text">Answer 4 quick questions and every workout is planned for you.</p>
+            </div>
+          </div>
+          <button class="today-start-btn" onclick="HomeWorkoutApp.openOnboarding({ editing: true })">Set up my plan</button>
+        </div>`;
+      return;
+    }
+
+    const session = TrainingPlan.buildSession(plan);
+    const doneToday = plan.lastCompletedAt && new Date(plan.lastCompletedAt).toDateString() === new Date().toDateString();
+    const thumbFallback = `this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'44\\' height=\\'44\\'><rect width=\\'44\\' height=\\'44\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'58%\\' text-anchor=\\'middle\\' font-size=\\'18\\'>💪</text></svg>'`;
+
+    const locToggle = plan.location === 'both' ? `
+      <div class="today-loc-toggle" role="group" aria-label="Where are you training today?">
+        ${['gym', 'home'].map(l => `
+          <button class="${session.location === l ? 'active' : ''}" onclick="HomeWorkoutApp.setTodayLocation('${l}')">
+            ${TrainingPlan.LOCATIONS[l].icon} ${TrainingPlan.LOCATIONS[l].label}
+          </button>`).join('')}
+      </div>` : '';
+
+    const list = session.loading
+      ? `<div class="today-loading">Loading your exercises…</div>`
+      : `<ol class="today-list">
+          ${session.exercises.map(ex => `
+            <li class="today-ex">
+              <img class="today-ex-thumb" src="${ex.thumbnailUrl}" alt="" loading="lazy" onerror="${thumbFallback}">
+              <div class="today-ex-info">
+                <strong>${ex.name}</strong>
+                <span>${ex.planSets} × ${ex.planReps}${ex.planRest ? ` · rest ${ex.planRest}s` : ''}</span>
+              </div>
+            </li>`).join('')}
+        </ol>`;
+
+    el.innerHTML = `
+      <div class="today-card">
+        ${doneToday ? `<div class="today-done-banner">✓ Today's workout is done. Great work!</div>` : ''}
+        <div class="today-top-row">
+          <span class="today-kicker">${doneToday ? 'Next up' : 'Today'} · Week ${session.week} · Day ${session.dayNumber} of ${session.totalDays}</span>
+          <button class="today-edit-btn" onclick="HomeWorkoutApp.openOnboarding({ editing: true })">Edit plan</button>
+        </div>
+        <h2 class="today-title">${session.name}</h2>
+        <p class="today-sub">${session.focus} · ~${session.estMinutes} min · ${session.exercises.length} exercises</p>
+        <span class="today-goal-pill">${session.goalIcon} ${session.goalLabel}</span>
+        ${locToggle}
+        ${list}
+        <button class="today-start-btn ${doneToday ? 'secondary' : ''}" ${session.loading ? 'disabled' : ''} onclick="HomeWorkoutApp.startTodayWorkout()">
+          ▶ ${doneToday ? 'Start next workout' : 'Start workout'}
+        </button>
+      </div>`;
+  },
+
+  setTodayLocation(location) {
+    HomeWorkoutStore.setPlanTodayLocation(location);
+    this.renderTodayCard();
+  },
+
+  startTodayWorkout() {
+    const plan = HomeWorkoutStore.getPlan();
+    if (!plan) return;
+    const session = TrainingPlan.buildSession(plan);
+    if (!session || session.loading || session.exercises.length === 0) {
+      alert('Your exercises are still loading. Please try again in a moment.');
+      return;
+    }
+
+    this.activeWorkout = {
+      id: `plan-w${session.week}-d${session.dayNumber}`,
+      title: `Week ${session.week} · Day ${session.dayNumber}: ${session.name}`,
+      isPlanWorkout: true,
+      planSessionIndex: session.sessionIndex,
+      dayNumber: session.dayNumber,
+      currentDay: session.dayNumber,
+      focus: session.focus,
+      tip: session.tip,
+      exercises: session.exercises
+    };
+    this.activeExerciseIndex = 0;
+    this.isPaused = false;
+    this.workoutStartedAt = Date.now();
+
+    const modal = document.getElementById('workoutRunnerModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    this.pushNavState({ modal: 'workoutRunnerModal' }, 'Workout Runner', '#runner');
+    this.loadCurrentExercise();
+
+    if (typeof TelemetryTracker !== 'undefined') {
+      TelemetryTracker.trackWorkoutStart(this.activeWorkout.id, this.activeWorkout.title, session.focus, session.exercises.length);
+    }
+  },
+
   renderChallengeCarousel() {
     const carousel = document.getElementById('challengeCarousel');
     if (!carousel) return;
@@ -289,8 +599,8 @@ const HomeWorkoutApp = {
             ${athleteSvg}
           </div>
 
-          <button class="start-day-pill-btn" onclick="HomeWorkoutApp.startWorkoutSession('${ch.id}', ${ch.currentDay})">
-            START DAY ${ch.currentDay} 
+          <button class="start-day-pill-btn" onclick="HomeWorkoutApp.startWorkoutSession('${ch.id}', ${HomeWorkoutStore.getChallengeDay(ch)})">
+            START DAY ${HomeWorkoutStore.getChallengeDay(ch)}
             <span class="start-arrow-circle">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6"></polyline>
@@ -1077,8 +1387,8 @@ const HomeWorkoutApp = {
             ${athleteSvg}
           </div>
 
-          <button class="start-day-pill-btn" onclick="HomeWorkoutApp.startWorkoutSession('${ch.id}', ${ch.currentDay})">
-            START DAY ${ch.currentDay} 
+          <button class="start-day-pill-btn" onclick="HomeWorkoutApp.startWorkoutSession('${ch.id}', ${HomeWorkoutStore.getChallengeDay(ch)})">
+            START DAY ${HomeWorkoutStore.getChallengeDay(ch)}
             <span class="start-arrow-circle">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="9 18 15 12 9 6"></polyline>
@@ -1169,7 +1479,7 @@ const HomeWorkoutApp = {
   // ========================================================
   startWorkoutSession(challengeId, dayNumber = 1) {
     const challenge = HomeWorkoutStore.getChallengeById(challengeId);
-    this.activeWorkout = challenge;
+    this.activeWorkout = { ...challenge, currentDay: dayNumber, title: `${challenge.title} · DAY ${dayNumber}` };
     this.activeExerciseIndex = 0;
     this.isPaused = false;
 
@@ -1217,7 +1527,9 @@ const HomeWorkoutApp = {
       return;
     }
 
-    this.timerSeconds = exercise.durationSeconds || 30;
+    const isPlan = Boolean(this.activeWorkout.isPlanWorkout && exercise.planSets);
+    // Plan workouts: the clock counts up (time on this exercise) and you tap NEXT when your sets are done
+    this.timerSeconds = isPlan ? 0 : (exercise.durationSeconds || 30);
 
     const titleEl = document.getElementById('runnerExTitle');
     const subEl = document.getElementById('runnerExSub');
@@ -1229,7 +1541,11 @@ const HomeWorkoutApp = {
     const instructionsBox = document.getElementById('runnerInstructionsBox');
 
     if (titleEl) titleEl.textContent = exercise.name;
-    if (subEl) subEl.textContent = `${exercise.reps} • ${exercise.durationSeconds}s duration`;
+    if (subEl) {
+      subEl.textContent = isPlan
+        ? `${exercise.planSets} sets × ${exercise.planReps}${exercise.planRest ? ` • rest ${exercise.planRest}s between sets` : ''}`
+        : `${exercise.reps} • ${exercise.durationSeconds}s duration`;
+    }
     if (badgeEl) badgeEl.textContent = `${this.activeWorkout.title} (${this.activeExerciseIndex + 1}/${this.activeWorkout.exercises.length})`;
 
     if (targetBadge) targetBadge.textContent = `🎯 ${exercise.target || exercise.muscle || 'Full Body'}`;
@@ -1263,7 +1579,11 @@ const HomeWorkoutApp = {
         instContent = `<div class="runner-instruction-step">Perform ${exercise.name} in steady rhythm, engaging your target muscles throughout.</div>`;
       }
 
+      const planTip = isPlan && this.activeWorkout.tip
+        ? `<div class="runner-plan-tip">💡 ${this.activeWorkout.tip}<br>Tap <strong>NEXT</strong> when all ${exercise.planSets} sets are done.</div>`
+        : '';
       instructionsBox.innerHTML = `
+        ${planTip}
         <div style="font-weight: 800; font-size: 0.74rem; color: var(--text-main); margin-bottom: 6px; text-transform: uppercase;">
           Movement Instructions:
         </div>
@@ -1286,6 +1606,12 @@ const HomeWorkoutApp = {
 
     this.timerInterval = setInterval(() => {
       if (this.isPaused) return;
+
+      if (this.activeWorkout && this.activeWorkout.isPlanWorkout) {
+        this.timerSeconds++;
+        this.updateTimerDisplay();
+        return;
+      }
 
       this.timerSeconds--;
       this.updateTimerDisplay();
@@ -1335,10 +1661,14 @@ const HomeWorkoutApp = {
     if (this.timerInterval) clearInterval(this.timerInterval);
 
     let result;
+    const isPlan = this.activeWorkout && this.activeWorkout.isPlanWorkout;
     const isDaily = this.activeWorkout && this.activeWorkout.isDailyMuscleRoutine;
     const isSingle = this.activeWorkout && this.activeWorkout.isSingleExercise;
 
-    if (isDaily) {
+    if (isPlan) {
+      const elapsedSeconds = (Date.now() - (this.workoutStartedAt || Date.now())) / 1000;
+      result = HomeWorkoutStore.completePlanSession(this.activeWorkout, elapsedSeconds);
+    } else if (isDaily) {
       const exerciseIds = this.activeWorkout.exercises.map(e => e.id);
       result = HomeWorkoutStore.logMuscleSessionCompleted(this.activeWorkout.muscle, exerciseIds, this.activeWorkout.exercises);
     } else if (isSingle && this.activeWorkout.exercises && this.activeWorkout.exercises.length > 0) {
@@ -1357,7 +1687,9 @@ const HomeWorkoutApp = {
 
     // Refresh all UI states
     this.renderHeader();
+    this.renderTodayCard();
     this.renderWeeklyGoalCard();
+    this.renderChallengeCarousel();
     this.renderBodyFocus({ forceRefresh: true });
 
     const workoutTitle = result && result.log ? result.log.challengeTitle : (this.activeWorkout.title || 'WORKOUT');
@@ -1365,13 +1697,16 @@ const HomeWorkoutApp = {
       TelemetryTracker.trackWorkoutComplete(
         this.activeWorkout.id,
         workoutTitle,
-        18,
-        145,
+        result && result.log ? result.log.durationMinutes : 18,
+        result && result.log ? result.log.caloriesBurned : 145,
         this.activeWorkout.exercises ? this.activeWorkout.exercises.length : 1
       );
     }
 
-    if (isDaily) {
+    if (isPlan) {
+      const next = result.plan ? TrainingPlan.buildSession(result.plan) : null;
+      alert(`🎉 WORKOUT COMPLETE!\n\n${workoutTitle}\n• Time: ${result.log.durationMinutes} min\n• Weekly goal: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget} days\n• Streak: ${result.user.streakCount} 🔥${next ? `\n\nNext up: Week ${next.week} · Day ${next.dayNumber}: ${next.name}` : ''}`);
+    } else if (isDaily) {
       const mName = this.activeWorkout.muscle.toUpperCase();
       alert(`🎉 ${mName} ROUTINE COMPLETED!\n\nAwesome work! All 5 exercises finished.\n• Logged: ${workoutTitle}\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥\n\n✨ Rotation Saved: Next time you do ${mName}, 5 fresh, unrepeated exercises will be recommended!`);
     } else {
@@ -1607,6 +1942,13 @@ const HomeWorkoutApp = {
       return;
     }
 
+    // 1b. Plan setup opened from the app (first-visit setup has no history entry to go back to)
+    const onboarding = document.getElementById('onboardingOverlay');
+    if (onboarding && onboarding.classList.contains('active')) {
+      if (this.ob && this.ob.editing) this.closeOnboarding(true);
+      return;
+    }
+
     // 2. Check if any overlay modal is open (close modal, stay on screen)
     const modalBackdrops = [
       'accountSecurityModalBackdrop',
@@ -1672,7 +2014,9 @@ const HomeWorkoutApp = {
       if (dash) dash.classList.add('active');
       this.currentScreen = 'dashboard';
       this.renderHeader();
+      this.renderTodayCard();
       this.renderWeeklyGoalCard();
+      this.renderChallengeCarousel();
       this.renderBodyFocus();
     } else if (tabId === 'discover') {
       const dir = document.getElementById('directoryScreen');
@@ -2300,6 +2644,10 @@ const HomeWorkoutApp = {
     if (!container) return;
 
     const hasRealEmail = user.email && !user.email.endsWith('@homeworkout.app');
+    const plan = HomeWorkoutStore.getPlan();
+    const planSummary = (plan && typeof TrainingPlan !== 'undefined')
+      ? `${TrainingPlan.GOALS[plan.goal].icon} ${TrainingPlan.GOALS[plan.goal].label} · ${plan.daysPerWeek} days/week · ${TrainingPlan.LOCATIONS[plan.location].label} · ${plan.minutes} min`
+      : 'Not set up yet';
 
     container.innerHTML = `
       <!-- User Profile Card -->
@@ -2325,6 +2673,20 @@ const HomeWorkoutApp = {
 
       <!-- Settings & Controls Card -->
       <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
+        <!-- Training Plan Row -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
+          <div>
+            <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Training Plan</h4>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">${planSummary}</span>
+          </div>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openOnboarding({ editing: true })" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;">
+            <span>${plan ? 'Change' : 'Set up'}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+        </div>
+
         <!-- Account Security / Recovery Row (If Signed In) -->
         ${token && user.username && !user.isGuest ? `
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
@@ -2396,10 +2758,14 @@ const HomeWorkoutApp = {
     if (confirm('Are you sure you want to reset all your workout progress, streak, and history back to 0/5?')) {
       await HomeWorkoutStore.resetAllProgress();
       this.renderHeader();
+      this.renderTodayCard();
       this.renderWeeklyGoalCard();
+      this.renderChallengeCarousel();
       this.renderBodyFocus({ forceRefresh: true });
       this.renderSettingsScreen();
-      alert('✅ All progress, streaks (0), and weekly workouts (0/5) have been reset.');
+      alert(HomeWorkoutStore.getPlan()
+        ? '✅ All progress, streaks and history have been reset. Your training plan starts again from Week 1, Day 1.'
+        : '✅ All progress, streaks (0), and weekly workouts (0/5) have been reset.');
     }
   }
 };

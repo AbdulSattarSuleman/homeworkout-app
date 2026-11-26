@@ -249,6 +249,7 @@ const HomeWorkoutStore = {
     user.name = user.username;
     user.email = data.user.email || targetEmail;
     user.isGuest = false;
+    this.restorePlanFromAccount(user, data.user);
     this.saveUser(user);
 
     // Save username mapping
@@ -486,6 +487,7 @@ const HomeWorkoutStore = {
             }).catch(e => console.warn('[Supabase] Auto-create profile notice:', e));
           }
 
+          this.restorePlanFromAccount(user, verifiedUser);
           this.saveUser(user);
           return user;
         }
@@ -1086,6 +1088,148 @@ const HomeWorkoutStore = {
   //  Being later in the object, they silently replaced the full versions above, so the
   //  streak was never recalculated and profile changes never reached Supabase.)
 
+  // ========================================================
+  // GOAL-BASED TRAINING PLAN
+  // Saved on the user (localStorage) and backed up to the Supabase
+  // account's user_metadata, so no database change is needed.
+  // ========================================================
+  getPlan() {
+    const user = this.getUser();
+    return user.plan && user.plan.goal ? user.plan : null;
+  },
+
+  savePlan({ goal, location, level, daysPerWeek, minutes }) {
+    const user = this.getUser();
+    const now = new Date().toISOString();
+    user.plan = {
+      version: 1,
+      goal,
+      location,
+      level,
+      daysPerWeek: Number(daysPerWeek),
+      minutes: Number(minutes),
+      todayLocation: location === 'both' ? 'gym' : location,
+      completedSessions: 0,
+      lastCompletedAt: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    user.planSkipped = false;
+    user.weeklyGoalTarget = Number(daysPerWeek);
+    user.fitnessLevel = level;
+    this.saveUser(user);
+    this.syncPlanToCloud(user.plan);
+    return user.plan;
+  },
+
+  skipPlanSetup() {
+    const user = this.getUser();
+    user.planSkipped = true;
+    this.saveUser(user);
+  },
+
+  setPlanTodayLocation(location) {
+    const user = this.getUser();
+    if (!user.plan) return null;
+    user.plan.todayLocation = location;
+    user.plan.updatedAt = new Date().toISOString();
+    this.saveUser(user);
+    this.syncPlanToCloud(user.plan);
+    return user.plan;
+  },
+
+  completePlanSession(workout, elapsedSeconds = 0) {
+    const user = this.getUser();
+    const plan = user.plan;
+    const now = new Date().toISOString();
+    const minutes = Math.max(1, Math.round((Number(elapsedSeconds) || 0) / 60));
+    const kcalPerMin = (typeof TrainingPlan !== 'undefined' && TrainingPlan.GOALS[plan && plan.goal])
+      ? TrainingPlan.GOALS[plan.goal].kcalPerMin
+      : 6;
+
+    const exercises = (workout.exercises || []).map(ex => ({
+      id: ex.id,
+      name: ex.name,
+      target: ex.target,
+      sets: ex.planSets,
+      reps: ex.planReps
+    }));
+
+    const newLog = {
+      id: 'log_' + Date.now(),
+      challengeId: workout.id,
+      challengeTitle: workout.title,
+      dayNumber: workout.dayNumber || 1,
+      completedAt: now,
+      durationMinutes: minutes,
+      caloriesBurned: Math.round(minutes * kcalPerMin),
+      exercises
+    };
+    const logs = this.getWorkoutLogs();
+    logs.unshift(newLog);
+    this.saveWorkoutLogs(logs);
+
+    // Move the plan forward (only once, even if this session is somehow completed twice)
+    if (plan) {
+      if (workout.planSessionIndex === (Number(plan.completedSessions) || 0)) {
+        plan.completedSessions = (Number(plan.completedSessions) || 0) + 1;
+      }
+      plan.lastCompletedAt = now;
+      plan.updatedAt = now;
+      user.plan = plan;
+    }
+    this.saveUser(user);
+    if (plan) this.syncPlanToCloud(plan);
+
+    this.logWorkoutSessionToCloud({
+      localLogId: newLog.id,
+      workoutId: workout.id,
+      title: workout.title,
+      muscle: workout.focus || 'Workout',
+      dayNumber: newLog.dayNumber,
+      durationMinutes: minutes,
+      caloriesBurned: newLog.caloriesBurned,
+      exercises
+    });
+
+    return { user: this.getUser(), log: newLog, plan };
+  },
+
+  syncPlanToCloud(plan) {
+    const client = this.initSupabase();
+    const user = this.getUser();
+    if (!client || user.isGuest || !plan) return;
+    client.auth.getSession().then(({ data }) => {
+      if (data && data.session) {
+        return client.auth.updateUser({ data: { training_plan: plan } });
+      }
+    }).then(res => {
+      if (res && res.error) console.warn('[Supabase] plan sync notice:', res.error.message);
+    }).catch(err => console.warn('[Supabase] plan sync notice:', err));
+  },
+
+  // Adopt the plan saved on the account if it is newer than the one on this device
+  restorePlanFromAccount(user, authUser) {
+    const remote = authUser && authUser.user_metadata && authUser.user_metadata.training_plan;
+    if (!remote || !remote.goal) return;
+    const local = user.plan;
+    const remoteTime = new Date(remote.updatedAt || 0).getTime();
+    const localTime = new Date((local && local.updatedAt) || 0).getTime();
+    if (!local || !local.goal || remoteTime > localTime) {
+      user.plan = remote;
+      user.planSkipped = false;
+    }
+  },
+
+  // Old-style challenges (28-day plans etc.): which day comes next
+  getChallengeDay(challenge) {
+    if (!challenge) return 1;
+    const user = this.getUser();
+    const done = Number((user.challengeProgress || {})[challenge.id]) || 0;
+    const total = Number(challenge.durationDays) || 0;
+    return total > 0 ? (done % total) + 1 : done + 1;
+  },
+
   togglePro() {
     const user = this.getUser();
     user.isPro = !user.isPro;
@@ -1119,6 +1263,13 @@ const HomeWorkoutStore = {
   logWorkoutCompletion(challengeId, dayNumber = 1, customTitle = null) {
     const challenge = this.getChallengeById(challengeId);
     const user = this.getUser();
+
+    // Move a multi-day challenge on to its next day
+    const isRealChallenge = this.initialState.challenges.some(c => c.id === challengeId);
+    if (isRealChallenge && Number(dayNumber) === this.getChallengeDay(challenge)) {
+      if (!user.challengeProgress) user.challengeProgress = {};
+      user.challengeProgress[challengeId] = (Number(user.challengeProgress[challengeId]) || 0) + 1;
+    }
 
     // 1. Save to workout history with accurate title
     const logs = this.getWorkoutLogs();
@@ -1292,6 +1443,13 @@ const HomeWorkoutStore = {
       freshUser.fitnessLevel = currentUser.fitnessLevel || 'Intermediate';
       freshUser.weeklyGoalTarget = currentUser.weeklyGoalTarget || 5;
     }
+    // Keep the training plan's settings but start it again from Week 1, Day 1
+    if (currentUser && currentUser.plan && currentUser.plan.goal) {
+      const now = new Date().toISOString();
+      freshUser.plan = { ...currentUser.plan, completedSessions: 0, lastCompletedAt: null, updatedAt: now };
+      this.syncPlanToCloud(freshUser.plan);
+    }
+    freshUser.planSkipped = Boolean(currentUser && currentUser.planSkipped);
     this.saveUser(freshUser);
     return freshUser;
   },
