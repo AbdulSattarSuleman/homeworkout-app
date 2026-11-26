@@ -1,11 +1,11 @@
 {
-  "name": "Cali Move Workouts",
-  "short_name": "Cali Move",
+  "name": "Home Workout - Fitness & Calisthenics",
+  "short_name": "Home Workout",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0a0d14",
-  "theme_color": "#0a0d14",
-  "description": "Calisthenics Movement Workout & Training Application",
+  "theme_color": "#0052FF",
+  "description": "Comprehensive Home Workout & Calisthenics Training Application",
   "icons": [
     {
       "src": "assets/images/app_icon.png",

@@ -2378,6 +2378,17 @@ const HomeWorkoutApp = {
           </button>
         </div>
       </div>
+
+      <!-- Privacy & Anonymous Telemetry Notice -->
+      <div style="background: #F8FAFC; border: 1px solid var(--border-divider); border-radius: 16px; padding: 14px 16px; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 0.95rem;">🔒</span>
+          <h5 style="font-weight: 800; font-size: 0.85rem; color: var(--text-main); margin: 0;">Privacy & Anonymous Telemetry</h5>
+        </div>
+        <p style="font-size: 0.74rem; color: var(--text-muted); margin: 0; line-height: 1.45;">
+          Anonymous performance, screen size, and workout telemetry are recorded to synchronize cross-device sessions and maintain streak accuracy. Personal passwords are never stored in plain text and athlete data is protected.
+        </p>
+      </div>
     `;
   },
 

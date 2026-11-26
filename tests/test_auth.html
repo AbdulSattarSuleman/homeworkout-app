@@ -72,25 +72,24 @@
   <div id="summaryCard"></div>
 
   <!-- Dependencies -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.1"></script>
   <script>
     window.APP_CONFIG = {
       SUPABASE_URL: 'https://rpjyrbbbqrehrkpckyuv.supabase.co',
       SUPABASE_ANON_KEY: 'sb_publishable_fBriFEcaShTseeF7OwVnXw_1L3mCx4n'
     };
   </script>
-  <script src="../js/exercises.js"></script>
-  <script src="../js/store.js"></script>
+  <script src="../web/js/exercises.js"></script>
+  <script src="../web/js/store.js"></script>
 
   <script>
     const testCases = [
       {
         id: 'test_short_user',
         name: 'Validation: Short Username',
-        desc: 'Rejects username with less than 3 characters',
         fn: async () => {
           try {
-            await HomeWorkoutStore.register('ab', 'password123');
+            await HomeWorkoutStore.register('ab', 'ab@example.com', 'password123');
             throw new Error('Expected validation error but passed');
           } catch (e) {
             if (e.message.includes('at least 3 characters')) return true;
@@ -104,7 +103,7 @@
         desc: 'Enforces minimum 8 characters for password',
         fn: async () => {
           try {
-            await HomeWorkoutStore.register('test_user_valid', '12345');
+            await HomeWorkoutStore.register('test_user_valid', 'valid@example.com', '12345');
             throw new Error('Expected validation error but passed');
           } catch (e) {
             if (e.message.includes('at least 8 characters')) return true;
@@ -118,7 +117,7 @@
         desc: 'Registers new user, securely hashes password, sets session token',
         fn: async () => {
           const testUser = 'athlete_' + Date.now();
-          const res = await HomeWorkoutStore.register(testUser, 'ironcladPass2026!');
+          const res = await HomeWorkoutStore.register(testUser, testUser + '@example.com', 'ironcladPass2026!');
           if (!res || !res.token) throw new Error('Missing token in response');
           if (HomeWorkoutStore.getUser().username !== testUser) throw new Error('User not saved in state');
           
@@ -135,12 +134,12 @@
         desc: 'Prevents registering existing username with specific message',
         fn: async () => {
           const existingUser = 'duplicate_runner';
-          await HomeWorkoutStore.register(existingUser, 'firstPass1234');
+          await HomeWorkoutStore.register(existingUser, 'dup1@example.com', 'firstPass1234');
           try {
-            await HomeWorkoutStore.register(existingUser, 'secondPass1234');
+            await HomeWorkoutStore.register(existingUser, 'dup2@example.com', 'secondPass1234');
             throw new Error('Expected duplicate error but passed');
           } catch (e) {
-            if (e.message.includes('Username already taken')) return true;
+            if (e.message.includes('Username already taken') || e.message.includes('already exists')) return true;
             throw e;
           }
         }
@@ -283,10 +282,9 @@
       }
     }
 
-    // Auto-run on load
+    // Render list on load (user clicks button to run)
     window.addEventListener('DOMContentLoaded', () => {
       renderTestList();
-      runAllTests();
     });
   </script>
 </body>

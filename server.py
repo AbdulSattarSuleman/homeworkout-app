@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import uuid
 import json
+import hmac
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, Query
@@ -19,6 +20,18 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+def hash_password(password: str, salt: Optional[str] = None) -> str:
+    if not salt:
+        salt = "hw_fitness_salt_2026"
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+
+def verify_password(plain_password: str, stored_hash: str) -> bool:
+    hashed = hash_password(plain_password)
+    if hmac.compare_digest(hashed, stored_hash):
+        return True
+    legacy = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(legacy, stored_hash)
 
 def init_db():
     conn = get_db()
@@ -128,7 +141,7 @@ def init_db():
     # Seed demo user if not exists
     cur.execute("SELECT id FROM users WHERE username = ?", ("athlete",))
     if not cur.fetchone():
-        pwd_hash = hashlib.sha256("workout123".encode()).hexdigest()
+        pwd_hash = hash_password("workout123")
         cur.execute("""
             INSERT INTO users (username, password_hash, fitness_level, is_pro, streak_count, weekly_goal_target, weekly_completed_count, is_admin)
             VALUES (?, ?, ?, ?, ?, ?, ?, 0)
@@ -136,7 +149,8 @@ def init_db():
         conn.commit()
 
     # Seed or configure admin user
-    admin_pwd = hashlib.sha256("admin123".encode()).hexdigest()
+    admin_default_pass = os.environ.get("ADMIN_DEFAULT_PASSWORD", "AdminSecure2026!")
+    admin_pwd = hash_password(admin_default_pass)
     cur.execute("SELECT id FROM users WHERE username = ?", ("admin",))
     row = cur.fetchone()
     if not row:
@@ -169,8 +183,6 @@ app.add_middleware(
 # ========================================================
 # AUTH HELPERS & DEPENDENCIES
 # ========================================================
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
 
 def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
@@ -179,11 +191,13 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     token = authorization.split(" ")[1]
     conn = get_db()
     cur = conn.cursor()
+    # Expire user sessions after 30 days
+    expiry_limit = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("""
         SELECT u.* FROM users u
         JOIN user_sessions s ON u.id = s.user_id
-        WHERE s.token = ?
-    """, (token,))
+        WHERE s.token = ? AND s.created_at >= ?
+    """, (token, expiry_limit))
     row = cur.fetchone()
     conn.close()
 
@@ -211,11 +225,12 @@ def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[d
     token = authorization.split(" ")[1]
     conn = get_db()
     cur = conn.cursor()
+    expiry_limit = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("""
         SELECT u.* FROM users u
         JOIN user_sessions s ON u.id = s.user_id
-        WHERE s.token = ?
-    """, (token,))
+        WHERE s.token = ? AND s.created_at >= ?
+    """, (token, expiry_limit))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -226,15 +241,17 @@ def get_admin_user(authorization: Optional[str] = Header(None)) -> dict:
     token = authorization.split(" ")[1]
     conn = get_db()
     cur = conn.cursor()
+    # Admin sessions expire after 7 days
+    expiry_limit = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute("""
         SELECT u.* FROM users u
         JOIN user_sessions s ON u.id = s.user_id
-        WHERE s.token = ? AND u.is_admin = 1
-    """, (token,))
+        WHERE s.token = ? AND u.is_admin = 1 AND s.created_at >= ?
+    """, (token, expiry_limit))
     row = cur.fetchone()
     conn.close()
     if not row:
-        raise HTTPException(status_code=403, detail="Access denied. Admin privileges required.")
+        raise HTTPException(status_code=403, detail="Access denied. Admin privileges required or session expired.")
     return dict(row)
 
 # ========================================================
@@ -331,12 +348,11 @@ def login(req: LoginRequest):
     username = req.username.strip()
     conn = get_db()
     cur = conn.cursor()
-    pwd_hash = hash_password(req.password)
 
-    cur.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND password_hash = ?", (username, pwd_hash))
+    cur.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (username,))
     user_row = cur.fetchone()
 
-    if not user_row:
+    if not user_row or not verify_password(req.password, user_row["password_hash"]):
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -416,7 +432,8 @@ def update_level(req: UpdateLevelRequest, user: dict = Depends(get_current_user)
     return {"user": user}
 
 @app.post("/api/user/toggle-pro")
-def toggle_pro(user: dict = Depends(get_current_user)):
+def toggle_pro(user: dict = Depends(get_admin_user)):
+    """Restricted to administrators only"""
     new_pro = 0 if user.get("is_pro") else 1
     conn = get_db()
     cur = conn.cursor()
@@ -654,7 +671,11 @@ def record_telemetry_event(
 
     screen_res = f"{req.screen_width}x{req.screen_height}" if (req.screen_width and req.screen_height) else None
     viewport_sz = f"{req.viewport_width}x{req.viewport_height}" if (req.viewport_width and req.viewport_height) else None
-    details_str = json.dumps(req.event_details or {})
+    details_str = json.dumps(req.event_details or {})[:2048]
+    ev_type = (req.event_type or "unknown")[:64]
+    ev_cat = (req.event_category or "general")[:64]
+    sess_id = (req.session_id or "anon")[:64]
+    dev_type = (req.device_type or "Unknown")[:64]
 
     conn = get_db()
     cur = conn.cursor()
@@ -666,9 +687,9 @@ def record_telemetry_event(
          screen_width, screen_height, viewport_width, viewport_height, device_type, user_agent, ip_address)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        user_id, username, req.session_id, req.event_type, req.event_category, details_str,
+        user_id, username, sess_id, ev_type, ev_cat, details_str,
         req.screen_width or 0, req.screen_height or 0, req.viewport_width or 0, req.viewport_height or 0,
-        req.device_type or "Unknown", user_agent, ip_addr
+        dev_type, user_agent[:255], ip_addr[:64]
     ))
 
     # 2. Upsert into session_telemetry
@@ -979,4 +1000,4 @@ app.mount("/", StaticFiles(directory="web", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="0.0.0.0", port=8080, reload=False)
+    uvicorn.run("server:app", host="127.0.0.1", port=8080, reload=False)

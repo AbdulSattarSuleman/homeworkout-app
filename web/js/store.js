@@ -292,20 +292,10 @@ const HomeWorkoutStore = {
           targetEmail = localUser.email;
         }
       }
-
-      // 3. Query Supabase profiles table in cloud
-      if (!targetEmail.includes('@') && client) {
-        try {
-          const { data: profile } = await client.from('profiles').select('email').ilike('username', cleanInput).maybeSingle();
-          if (profile && profile.email && profile.email.includes('@')) {
-            targetEmail = profile.email;
-          }
-        } catch (e) {}
-      }
     }
 
     if (!targetEmail.includes('@') || targetEmail.endsWith('@homeworkout.app')) {
-      throw new Error('No verified personal recovery email is linked to this athlete account. Password reset emails can only be delivered to valid personal email addresses. If you know your password, please sign in and link your recovery email in Settings.');
+      throw new Error('Please enter the personal recovery email address you linked to your account to receive password reset instructions.');
     }
 
     if (!client) {
@@ -590,6 +580,33 @@ const HomeWorkoutStore = {
     }
   },
 
+  getWeeklyCompletedCount(logs = null) {
+    try {
+      const workoutLogs = logs || this.getWorkoutLogs();
+      if (!workoutLogs || workoutLogs.length === 0) return 0;
+
+      // Start of current week: Monday 00:00:00.000 local time
+      const now = new Date();
+      const currentDay = now.getDay(); // 0 = Sun, 1 = Mon...
+      const distanceToMonday = (currentDay + 6) % 7;
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distanceToMonday, 0, 0, 0, 0);
+      const startOfWeekTime = monday.getTime();
+
+      let count = 0;
+      workoutLogs.forEach(log => {
+        if (log && log.completedAt) {
+          const t = new Date(log.completedAt).getTime();
+          if (!isNaN(t) && t >= startOfWeekTime) {
+            count++;
+          }
+        }
+      });
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  },
+
   getUser() {
     let user;
     try {
@@ -602,7 +619,7 @@ const HomeWorkoutStore = {
       user = JSON.parse(JSON.stringify(this.initialState.user));
     }
     user.weeklyGoalTarget = Number(user.weeklyGoalTarget) || 5;
-    user.weeklyCompletedCount = Number(user.weeklyCompletedCount) || 0;
+    user.weeklyCompletedCount = this.getWeeklyCompletedCount();
     user.activeWeekDays = Array.isArray(user.activeWeekDays) ? user.activeWeekDays : [16, 17, 18, 19, 20, 21, 22];
     user.streakCount = this.calculateStreak();
     return user;
@@ -612,6 +629,7 @@ const HomeWorkoutStore = {
     try {
       user.updatedAt = new Date().toISOString();
       user.streakCount = this.calculateStreak();
+      user.weeklyCompletedCount = this.getWeeklyCompletedCount();
       localStorage.setItem(this.KEYS.USER_PROGRESS, JSON.stringify(user));
 
       // Supabase Cloud Profile Sync
@@ -692,26 +710,43 @@ const HomeWorkoutStore = {
         .eq('user_id', userId)
         .order('completed_at', { ascending: false });
 
-      if (logs && !lErr && logs.length > 0) {
+      if (!lErr && Array.isArray(logs)) {
         const localLogs = this.getWorkoutLogs();
-        const mergedMap = new Map();
-        localLogs.forEach(l => mergedMap.set(l.id, l));
-        logs.forEach(l => {
-          mergedMap.set(l.id, {
-            id: l.id,
-            challengeId: l.title,
-            challengeTitle: l.title,
-            dayNumber: 1,
-            completedAt: l.completed_at,
-            durationMinutes: l.duration_minutes,
-            caloriesBurned: l.calories_burned,
-            blocks: l.blocks || []
+        // Start with cloud logs formatted as app workout logs
+        const mergedList = logs.map(l => ({
+          id: String(l.id),
+          challengeId: l.title || 'workout',
+          challengeTitle: l.title || 'Workout Session',
+          dayNumber: 1,
+          completedAt: l.completed_at || new Date().toISOString(),
+          durationMinutes: Number(l.duration_minutes) || 18,
+          caloriesBurned: Number(l.calories_burned) || 145,
+          blocks: l.blocks || []
+        }));
+
+        // Keep local-only un-synced logs (id starts with 'log_') if not duplicate of cloud log
+        localLogs.forEach(loc => {
+          const isLocalOnly = String(loc.id).startsWith('log_');
+          if (!isLocalOnly) return; // If it had a cloud ID and is not in cloud logs, it was deleted remotely
+
+          const locTime = new Date(loc.completedAt).getTime();
+          const locTitle = (loc.challengeTitle || '').trim().toLowerCase();
+          const isDuplicate = mergedList.some(cloud => {
+            if (String(cloud.id) === String(loc.id)) return true;
+            const cloudTime = new Date(cloud.completedAt).getTime();
+            const cloudTitle = (cloud.challengeTitle || '').trim().toLowerCase();
+            return locTitle === cloudTitle && Math.abs(locTime - cloudTime) < 120000;
           });
+          if (!isDuplicate) {
+            mergedList.push(loc);
+          }
         });
-        const mergedList = Array.from(mergedMap.values()).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+
+        mergedList.sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
         this.saveWorkoutLogs(mergedList);
         const user = this.getUser();
         user.streakCount = this.calculateStreak(mergedList);
+        user.weeklyCompletedCount = this.getWeeklyCompletedCount(mergedList);
         this.saveUser(user);
       }
     } catch (err) {
@@ -1103,12 +1138,12 @@ const HomeWorkoutStore = {
       console.warn('Failed to save logs:', e);
     }
 
-    // 2. Increment weekly completed count and recalculate streak based on logs
-    user.weeklyCompletedCount += 1;
+    // 2. Recalculate streak and weekly goal dynamically from logs
     this.saveUser(user);
 
     // 3. Cloud background sync
     this.logWorkoutSessionToCloud({
+      localLogId: newLog.id,
       workoutId: challengeId,
       title: title,
       muscle: challenge ? challenge.metrics.targetArea : 'Workout',
@@ -1156,11 +1191,11 @@ const HomeWorkoutStore = {
     }
 
     // Increment progress counters and recalculate streak from logs
-    user.weeklyCompletedCount += 1;
     this.saveUser(user);
 
     // Cloud background sync
     this.logWorkoutSessionToCloud({
+      localLogId: newLog.id,
       workoutId: `ex-${exercise.id}`,
       title: title,
       muscle: muscle,
@@ -1192,11 +1227,25 @@ const HomeWorkoutStore = {
 
   async clearWorkoutLogs() {
     localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
+
+    const client = this.initSupabase();
+    if (client) {
+      try {
+        const { data: s } = await client.auth.getSession();
+        if (s && s.session && s.session.user) {
+          await client.from('workout_logs').delete().eq('user_id', s.session.user.id);
+        }
+      } catch (e) {
+        console.warn('[Supabase] clearWorkoutLogs delete notice:', e);
+      }
+    }
+
     if (this.getToken()) {
       await this.apiRequest('/api/workouts/history', 'DELETE');
     }
     const user = this.getUser();
     user.weeklyCompletedCount = 0;
+    user.streakCount = 0;
     this.saveUser(user);
     return [];
   },
@@ -1209,25 +1258,34 @@ const HomeWorkoutStore = {
     const filtered = current.filter(l => !logIds.includes(String(l.id)));
     this.saveWorkoutLogs(filtered);
 
-    // Sync to cloud if authenticated
+    // Delete from Supabase cloud
+    const client = this.initSupabase();
+    if (client) {
+      try {
+        const { data: s } = await client.auth.getSession();
+        if (s && s.session && s.session.user) {
+          await client.from('workout_logs').delete().eq('user_id', s.session.user.id).in('id', logIds);
+        }
+      } catch (e) {
+        console.warn('[Supabase] deleteSelectedWorkoutLogs notice:', e);
+      }
+    }
+
+    // Sync to Python API if authenticated
     if (this.getToken()) {
       try {
-        const res = await this.apiRequest('/api/workouts/history/delete-selected', 'POST', {
+        await this.apiRequest('/api/workouts/history/delete-selected', 'POST', {
           log_ids: logIds.map(String)
         });
-        if (res && typeof res.remaining_count === 'number') {
-          const user = this.getUser();
-          user.weeklyCompletedCount = res.remaining_count;
-          this.saveUser(user);
-        }
       } catch (err) {
         console.warn('Failed cloud delete sync:', err);
       }
-    } else {
-      const user = this.getUser();
-      user.weeklyCompletedCount = Math.max(0, user.weeklyCompletedCount - logIds.length);
-      this.saveUser(user);
     }
+
+    const user = this.getUser();
+    user.weeklyCompletedCount = this.getWeeklyCompletedCount(filtered);
+    user.streakCount = this.calculateStreak(filtered);
+    this.saveUser(user);
 
     return filtered;
   },
@@ -1235,6 +1293,22 @@ const HomeWorkoutStore = {
   async resetAllProgress() {
     localStorage.removeItem(this.KEYS.USER_PROGRESS);
     localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
+
+    const client = this.initSupabase();
+    if (client) {
+      try {
+        const { data: s } = await client.auth.getSession();
+        if (s && s.session && s.session.user) {
+          await client.from('workout_logs').delete().eq('user_id', s.session.user.id);
+          await client.from('profiles').update({
+            streak_count: 0,
+            weekly_completed_count: 0
+          }).eq('id', s.session.user.id);
+        }
+      } catch (e) {
+        console.warn('[Supabase] resetAllProgress notice:', e);
+      }
+    }
 
     if (this.getToken()) {
       await this.apiRequest('/api/user/reset-progress', 'POST');
@@ -1455,12 +1529,12 @@ const HomeWorkoutStore = {
       console.warn('Failed to save log:', e);
     }
 
-    // 2. Increment weekly completed counter and recalculate streak
-    user.weeklyCompletedCount += 1;
+    // 2. Recalculate streak and weekly goal dynamically from logs
     this.saveUser(user);
 
     // 3. Cloud background sync
     this.logWorkoutSessionToCloud({
+      localLogId: newLog.id,
       workoutId: `daily-${mKey}`,
       title: title,
       muscle: muscle,
@@ -1473,22 +1547,32 @@ const HomeWorkoutStore = {
     return { user, log: newLog };
   },
 
-  async logWorkoutSessionToCloud({ workoutId, title, muscle, dayNumber, durationMinutes, caloriesBurned, exercises }) {
+  async logWorkoutSessionToCloud({ workoutId, title, muscle, dayNumber, durationMinutes, caloriesBurned, exercises, localLogId }) {
     // 1. Supabase Cloud Sync
     const client = this.initSupabase();
     if (client) {
       try {
         const { data: sessionData } = await client.auth.getSession();
         if (sessionData && sessionData.session && sessionData.session.user) {
-          const { error } = await client.from('workout_logs').insert({
+          const { data: inserted, error } = await client.from('workout_logs').insert({
             user_id: sessionData.session.user.id,
             title: title || 'Workout Session',
             location_slug: 'home',
             duration_minutes: durationMinutes || 18,
             calories_burned: caloriesBurned || 145,
             blocks: exercises || []
-          });
-          if (error) console.warn('[Supabase] workout log insert error:', error.message);
+          }).select().maybeSingle();
+
+          if (error) {
+            console.warn('[Supabase] workout log insert error:', error.message);
+          } else if (inserted && inserted.id && localLogId) {
+            const currentLogs = this.getWorkoutLogs();
+            const target = currentLogs.find(l => l.id === localLogId);
+            if (target) {
+              target.id = String(inserted.id);
+              this.saveWorkoutLogs(currentLogs);
+            }
+          }
         }
       } catch (e) {
         console.warn('[Supabase] workout log sync notice:', e);

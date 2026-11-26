@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
-  <!-- Supabase Cloud SDK for live serverless admin on GitHub Pages -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Supabase Cloud SDK (Pinned Exact Version) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.1"></script>
   
   <style>
     :root {
@@ -634,13 +634,13 @@
       </div>
 
       <div class="gate-input-group">
-        <label class="gate-label">Admin Username</label>
-        <input type="text" id="adminUserField" class="gate-input" value="admin" placeholder="Username">
+        <label class="gate-label">Admin Email or Username</label>
+        <input type="text" id="adminUserField" class="gate-input" placeholder="admin@example.com or admin">
       </div>
 
       <div class="gate-input-group">
         <label class="gate-label">Admin Password</label>
-        <input type="password" id="adminPassField" class="gate-input" placeholder="Password" onkeydown="if(event.key === 'Enter') AdminApp.login()">
+        <input type="password" id="adminPassField" class="gate-input" placeholder="Enter secure password" onkeydown="if(event.key === 'Enter') AdminApp.login()">
       </div>
 
       <button class="btn btn-primary" style="width: 100%; padding: 12px; justify-content: center; margin-top: 10px; font-size: 0.88rem;" onclick="AdminApp.login()">
@@ -653,16 +653,11 @@
           <span>☁️</span> Cloud Admin Console (Supabase)
         </div>
         <p style="font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; margin-bottom: 10px;">
-          On GitHub Pages, athlete accounts and workout records sync to your <strong>Supabase Cloud Database</strong>. To view registered users and database tables live, open your Supabase Dashboard:
+          Athlete accounts and telemetry sync to your <strong>Supabase Cloud Database</strong>. To inspect database tables directly, manage users, or run SQL queries, access your project dashboard:
         </p>
         <a href="https://supabase.com/dashboard/project/rpjyrbbbqrehrkpckyuv" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="width: 100%; justify-content: center; text-decoration: none; font-size: 0.78rem;">
           🚀 Open Supabase Dashboard ↗
         </a>
-      </div>
-
-      <div style="margin-top: 14px; font-size: 0.72rem; color: var(--text-muted); text-align: center; line-height: 1.45;">
-        To log into this local Command Center, launch <code style="color: var(--accent-emerald); background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 4px;">python server.py</code> locally on your machine.<br>
-        Local Credentials: <strong style="color: #FFF;">admin</strong> / <strong style="color: #FFF;">admin123</strong>
       </div>
     </div>
   </div>
@@ -983,25 +978,37 @@
         if (gate) gate.style.display = show ? 'flex' : 'none';
       },
 
+      escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      },
+
       async verifyToken() {
         if (this.isSupabaseMode) {
-          if (this.token && (this.token.startsWith('admin_session_') || this.token === 'hw_admin_secret_token')) {
-            this.showGate(false);
-            this.updateServerBadge();
-            this.startAutoRefresh();
-            this.refreshAll();
-            return;
-          }
           const supa = this.initSupabase();
           if (supa && this.token) {
             try {
               const { data, error } = await supa.auth.getUser(this.token);
               if (!error && data && data.user) {
-                this.showGate(false);
-                this.updateServerBadge();
-                this.startAutoRefresh();
-                this.refreshAll();
-                return;
+                // Verify admin privileges in profiles table
+                const { data: profile, error: pErr } = await supa
+                  .from('profiles')
+                  .select('is_admin, role')
+                  .eq('id', data.user.id)
+                  .maybeSingle();
+
+                if (!pErr && profile && (profile.is_admin === true || profile.role === 'admin')) {
+                  this.showGate(false);
+                  this.updateServerBadge();
+                  this.startAutoRefresh();
+                  this.refreshAll();
+                  return;
+                }
               }
             } catch (e) {}
           }
@@ -1033,32 +1040,14 @@
         const password = passEl.value.trim();
 
         if (!username || !password) {
-          alertEl.textContent = 'Please enter both admin username and password.';
+          alertEl.textContent = 'Please enter both admin username/email and password.';
           alertEl.style.display = 'block';
           return;
         }
 
         alertEl.style.display = 'none';
 
-        // 0. Primary Administrator Check (Works on GitHub Pages & Static hosting without local server)
-        const uLower = username.toLowerCase();
-        const isAdminCreds = (uLower === 'admin' && password === 'admin123') ||
-                             (uLower === 'superadmin' && password === 'admin123') ||
-                             (uLower === 'abdulsattar' && password === 'admin123');
-
-        if (isAdminCreds) {
-          this.token = 'admin_session_' + Date.now().toString(36);
-          this.isSupabaseMode = true;
-          localStorage.setItem('hw_admin_token', this.token);
-          localStorage.setItem('hw_admin_mode', 'supabase');
-          this.showGate(false);
-          this.updateServerBadge();
-          this.startAutoRefresh();
-          this.refreshAll();
-          return;
-        }
-
-        // 1. Authenticate with Supabase Cloud (Live URL GitHub Pages mode)
+        // 1. Authenticate with Supabase Cloud
         const supa = this.initSupabase();
         if (supa) {
           try {
@@ -1068,16 +1057,61 @@
               password: password
             });
 
-            if (!error && data && data.session) {
-              this.token = data.session.access_token;
-              this.isSupabaseMode = true;
-              localStorage.setItem('hw_admin_token', this.token);
-              localStorage.setItem('hw_admin_mode', 'supabase');
-              this.showGate(false);
-              this.updateServerBadge();
-              this.startAutoRefresh();
-              this.refreshAll();
-              return;
+            if (!error && data && data.session && data.session.user) {
+              // Verify admin privileges in profiles table
+              const { data: profile, error: pErr } = await supa
+                .from('profiles')
+                .select('is_admin, role')
+                .eq('id', data.session.user.id)
+                .maybeSingle();
+
+              if (!pErr && profile && (profile.is_admin === true || profile.role === 'admin')) {
+                this.token = data.session.access_token;
+                this.isSupabaseMode = true;
+                localStorage.setItem('hw_admin_token', this.token);
+                localStorage.setItem('hw_admin_mode', 'supabase');
+                this.showGate(false);
+                this.updateServerBadge();
+                this.startAutoRefresh();
+                this.refreshAll();
+                return;
+              } else {
+                alertEl.textContent = 'Access Denied: Your account does not have administrator privileges. Please set is_admin = true in Supabase.';
+                alertEl.style.display = 'block';
+                await supa.auth.signOut();
+                return;
+              }
+            } else if (error && !username.includes('@')) {
+              // Check local username-to-email mapping fallback
+              try {
+                const map = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
+                const mappedEmail = map[username.toLowerCase()];
+                if (mappedEmail) {
+                  const { data: retryData, error: retryErr } = await supa.auth.signInWithPassword({
+                    email: mappedEmail,
+                    password: password
+                  });
+                  if (!retryErr && retryData && retryData.session) {
+                    const { data: p } = await supa.from('profiles').select('is_admin, role').eq('id', retryData.session.user.id).maybeSingle();
+                    if (p && (p.is_admin === true || p.role === 'admin')) {
+                      this.token = retryData.session.access_token;
+                      this.isSupabaseMode = true;
+                      localStorage.setItem('hw_admin_token', this.token);
+                      localStorage.setItem('hw_admin_mode', 'supabase');
+                      this.showGate(false);
+                      this.updateServerBadge();
+                      this.startAutoRefresh();
+                      this.refreshAll();
+                      return;
+                    } else {
+                      alertEl.textContent = 'Access Denied: Account lacks administrator privileges.';
+                      alertEl.style.display = 'block';
+                      await supa.auth.signOut();
+                      return;
+                    }
+                  }
+                }
+              } catch (e) {}
             }
           } catch (supaErr) {
             console.warn('[Admin Supabase] Cloud auth attempt:', supaErr);
@@ -1103,12 +1137,12 @@
             this.refreshAll();
             return;
           } else {
-            alertEl.textContent = data.detail || 'Access denied: Invalid credentials.';
+            alertEl.textContent = data.detail || 'Access denied: Invalid credentials or non-admin account.';
             alertEl.style.display = 'block';
             return;
           }
         } catch (e) {
-          alertEl.textContent = 'Invalid credentials or connection error. Please check your admin username and password.';
+          alertEl.textContent = 'Invalid credentials or connection error. Please verify your admin username and password.';
           alertEl.style.display = 'block';
         }
       },
@@ -1239,9 +1273,9 @@
           } else {
             screensEl.innerHTML = screens.map(s => `
               <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">📐 ${s.screen_resolution}</span>
+                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">📐 ${this.escapeHtml(s.screen_resolution)}</span>
                 <span style="background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;">
-                  ${s.count} sessions
+                  ${Number(s.count) || 0} sessions
                 </span>
               </div>
             `).join('');
@@ -1255,9 +1289,9 @@
           } else {
             devicesEl.innerHTML = devices.map(d => `
               <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">💻 ${d.device_type}</span>
+                <span style="font-weight: 800; color: #FFF; font-size: 0.9rem;">💻 ${this.escapeHtml(d.device_type)}</span>
                 <span style="background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;">
-                  ${d.count} sessions
+                  ${Number(d.count) || 0} sessions
                 </span>
               </div>
             `).join('');
@@ -1453,21 +1487,22 @@
 
           const screenRes = (a.screen_width && a.screen_height) ? `${a.screen_width}x${a.screen_height}` : '';
 
+          const safeUsername = a.username ? `@${this.escapeHtml(a.username)}` : '<span style="color: var(--text-muted);">@anonymous_guest</span>';
+          const safeDetails = this.escapeHtml(detailText);
+
           return `
             <div class="activity-card">
               <div class="act-left">
-                <span class="act-type-badge ${badgeClass}">${icon} ${typeLabel}</span>
+                <span class="act-type-badge ${badgeClass}">${icon} ${this.escapeHtml(typeLabel)}</span>
                 <div>
-                  <div class="act-user-tag">
-                    ${a.username ? `@${a.username}` : '<span style="color: var(--text-muted);">@anonymous_guest</span>'}
-                  </div>
-                  <div class="act-details" title="${detailText}">${detailText}</div>
+                  <div class="act-user-tag">${safeUsername}</div>
+                  <div class="act-details" title="${safeDetails}">${safeDetails}</div>
                 </div>
               </div>
               <div class="act-right">
-                ${screenRes ? `<span class="act-device-pill">📐 ${screenRes}</span>` : ''}
-                ${a.device_type ? `<span class="act-device-pill">${a.device_type}</span>` : ''}
-                <span>${dateTimeStr}</span>
+                ${screenRes ? `<span class="act-device-pill">📐 ${this.escapeHtml(screenRes)}</span>` : ''}
+                ${a.device_type ? `<span class="act-device-pill">${this.escapeHtml(a.device_type)}</span>` : ''}
+                <span>${this.escapeHtml(dateTimeStr)}</span>
               </div>
             </div>
           `;
@@ -1551,38 +1586,42 @@
           const userIdStr = String(u.id);
           const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
           const userWorkouts = (this.cachedActivities || []).filter(a => 
-            a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === u.username.toLowerCase()))
+            a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === (u.username || '').toLowerCase()))
           );
           const workoutCount = u.workout_count !== undefined ? u.workout_count : userWorkouts.length;
+          const safeUsername = this.escapeHtml(u.username || 'athlete');
+          const safeLevel = this.escapeHtml(u.fitness_level || 'Intermediate');
+          const safeDevice = this.escapeHtml(u.last_device_type || 'Cloud Sync');
+          const safeIdAttr = encodeURIComponent(userIdStr);
 
           return `
             <tr>
               <td>
                 <div style="font-weight: 800; color: #FFF; display: flex; align-items: center; gap: 6px;">
-                  @${u.username}
+                  @${safeUsername}
                   ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                   ${u.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO</span>' : ''}
                   ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">GUEST</span>' : ''}
                 </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${shortId}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted);">ID: #${this.escapeHtml(shortId)}</div>
               </td>
               <td>
-                <div style="font-weight: 600; color: #FFF; font-size: 0.8rem;">📅 ${createdDateStr}</div>
+                <div style="font-weight: 600; color: #FFF; font-size: 0.8rem;">📅 ${this.escapeHtml(createdDateStr)}</div>
               </td>
               <td>
-                <div style="color: var(--accent-blue); font-weight: 600; font-size: 0.8rem;">⚡ ${lastActiveStr}</div>
+                <div style="color: var(--accent-blue); font-weight: 600; font-size: 0.8rem;">⚡ ${this.escapeHtml(lastActiveStr)}</div>
               </td>
               <td>
                 <span style="font-weight: 700; background: rgba(255,255,255,0.06); padding: 3px 8px; border-radius: 4px; font-size: 0.78rem;">
-                  ${u.fitness_level || 'Intermediate'}
+                  ${safeLevel}
                 </span>
               </td>
-              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${u.streak_count || 0}</span></td>
-              <td><span style="font-weight: 700;">${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5}</span></td>
-              <td><strong style="color: var(--accent-emerald);">${workoutCount}</strong></td>
-              <td><span class="act-device-pill">${u.last_device_type || 'Cloud Sync'}</span></td>
+              <td><span style="color: var(--accent-amber); font-weight: 800;">🔥 ${Number(u.streak_count) || 0}</span></td>
+              <td><span style="font-weight: 700;">${Number(u.weekly_completed_count) || 0}/${Number(u.weekly_goal_target) || 5}</span></td>
+              <td><strong style="color: var(--accent-emerald);">${Number(workoutCount) || 0}</strong></td>
+              <td><span class="act-device-pill">${safeDevice}</span></td>
               <td>
-                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.75rem;" onclick="AdminApp.inspectUser('${userIdStr}')">
+                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.75rem;" onclick="AdminApp.inspectUser('${safeIdAttr}')">
                   🔍 Inspect
                 </button>
               </td>
@@ -1604,51 +1643,54 @@
             const userIdStr = String(u.id);
             const shortId = userIdStr.length > 8 ? userIdStr.substring(0, 8) + '...' : userIdStr;
             const userWorkouts = (this.cachedActivities || []).filter(a => 
-              a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === u.username.toLowerCase()))
+              a.event_category === 'workout' && (String(a.user_id) === userIdStr || (a.username && a.username.toLowerCase() === (u.username || '').toLowerCase()))
             );
             const workoutCount = u.workout_count !== undefined ? u.workout_count : userWorkouts.length;
+            const safeUsername = this.escapeHtml(u.username || 'athlete');
+            const safeLevel = this.escapeHtml(u.fitness_level || 'Intermediate');
+            const safeIdAttr = encodeURIComponent(userIdStr);
 
             return `
               <div class="athlete-card-mobile">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
                   <div>
                     <div style="font-weight: 800; font-size: 1rem; color: #FFF; display: flex; align-items: center; gap: 6px;">
-                      @${u.username}
+                      @${safeUsername}
                       ${u.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                       ${u.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO</span>' : ''}
                       ${isGuest ? '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">GUEST</span>' : ''}
                     </div>
-                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">UUID: #${shortId}</div>
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">UUID: #${this.escapeHtml(shortId)}</div>
                   </div>
                   <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 3px 8px; border-radius: 6px; font-weight: 700;">
-                    ${u.fitness_level || 'Intermediate'}
+                    ${safeLevel}
                   </span>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; padding: 10px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid rgba(255,255,255,0.04);">
                   <div>
                     <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">📅 Account Created</div>
-                    <div style="font-size: 0.78rem; font-weight: 700; color: #FFF; margin-top: 2px;">${createdDateStr}</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: #FFF; margin-top: 2px;">${this.escapeHtml(createdDateStr)}</div>
                   </div>
                   <div>
                     <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">⚡ Last Active</div>
-                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-blue); margin-top: 2px;">${lastActiveStr}</div>
+                    <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-blue); margin-top: 2px;">${this.escapeHtml(lastActiveStr)}</div>
                   </div>
                   <div>
                     <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">🔥 Streak & Goal</div>
                     <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-amber); margin-top: 2px;">
-                      ${u.streak_count || 0}d • ${u.weekly_completed_count || 0}/${u.weekly_goal_target || 5} wk
+                      ${Number(u.streak_count) || 0}d • ${Number(u.weekly_completed_count) || 0}/${Number(u.weekly_goal_target) || 5} wk
                     </div>
                   </div>
                   <div>
                     <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">🏆 Workouts Done</div>
                     <div style="font-size: 0.78rem; font-weight: 700; color: var(--accent-emerald); margin-top: 2px;">
-                      ${workoutCount} completed
+                      ${Number(workoutCount) || 0} completed
                     </div>
                   </div>
                 </div>
 
-                <button class="btn btn-secondary" style="width: 100%; justify-content: center; padding: 9px; font-size: 0.8rem; margin-top: 4px;" onclick="AdminApp.inspectUser('${userIdStr}')">
+                <button class="btn btn-secondary" style="width: 100%; justify-content: center; padding: 9px; font-size: 0.8rem; margin-top: 4px;" onclick="AdminApp.inspectUser('${safeIdAttr}')">
                   🔍 Inspect Athlete Activity & Searches
                 </button>
               </div>
@@ -1674,7 +1716,7 @@
         const body = document.getElementById('detailModalBody');
         if (!modal || !title || !body) return;
 
-        title.innerHTML = `👤 Inspecting Athlete: <strong>@${user.username}</strong>`;
+        title.innerHTML = `👤 Inspecting Athlete: <strong>@${this.escapeHtml(user.username)}</strong>`;
 
         let workouts = [];
         let activities = [];
@@ -1734,14 +1776,14 @@
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 10px;">
               <div>
                 <div style="font-size: 1.15rem; font-weight: 900; color: #FFF; display: flex; align-items: center; gap: 8px;">
-                  @${user.username}
+                  @${this.escapeHtml(user.username)}
                   ${user.is_admin ? '<span style="background: var(--accent-purple); color: #FFF; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">ADMIN</span>' : ''}
                   ${user.is_pro ? '<span style="background: var(--accent-amber); color: #000; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-weight: 800;">PRO ATHLETE</span>' : '<span style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">FREE TIER</span>'}
                 </div>
-                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; font-family: monospace;">UUID: ${user.id}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; font-family: monospace;">UUID: ${this.escapeHtml(user.id)}</div>
               </div>
               <span style="font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); padding: 4px 10px; border-radius: 6px; font-weight: 800;">
-                ${user.fitness_level || 'Intermediate'} Level
+                ${this.escapeHtml(user.fitness_level || 'Intermediate')} Level
               </span>
             </div>
 
@@ -1749,11 +1791,11 @@
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">
               <div style="background: rgba(0,0,0,0.25); padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
                 <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">📅 Account Created (Date & Time)</div>
-                <div style="font-size: 0.82rem; font-weight: 800; color: #FFF; margin-top: 4px;">${createdFull}</div>
+                <div style="font-size: 0.82rem; font-weight: 800; color: #FFF; margin-top: 4px;">${this.escapeHtml(createdFull)}</div>
               </div>
               <div style="background: rgba(0,0,0,0.25); padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
                 <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">⚡ Last Active (Date & Time)</div>
-                <div style="font-size: 0.82rem; font-weight: 800; color: var(--accent-blue); margin-top: 4px;">${lastActiveFull}</div>
+                <div style="font-size: 0.82rem; font-weight: 800; color: var(--accent-blue); margin-top: 4px;">${this.escapeHtml(lastActiveFull)}</div>
               </div>
             </div>
           </div>
@@ -1762,11 +1804,11 @@
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px;">
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Current Streak</div>
-              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-amber); margin-top: 3px;">🔥 ${user.streak_count || 0}d</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-amber); margin-top: 3px;">🔥 ${Number(user.streak_count) || 0}d</div>
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Weekly Goal</div>
-              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-blue); margin-top: 3px;">${user.weekly_completed_count || 0}/${user.weekly_goal_target || 5}</div>
+              <div style="font-size: 1.3rem; font-weight: 900; color: var(--accent-blue); margin-top: 3px;">${Number(user.weekly_completed_count) || 0}/${Number(user.weekly_goal_target) || 5}</div>
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Workouts Done</div>
@@ -1774,7 +1816,7 @@
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center;">
               <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase;">Location Preference</div>
-              <div style="font-size: 1rem; font-weight: 800; color: #FFF; margin-top: 5px; text-transform: capitalize;">🏠 ${user.active_location_id || 'home'}</div>
+              <div style="font-size: 1rem; font-weight: 800; color: #FFF; margin-top: 5px; text-transform: capitalize;">🏠 ${this.escapeHtml(user.active_location_id || 'home')}</div>
             </div>
           </div>
 
@@ -1806,34 +1848,34 @@
                   badge = '🧭 SCREEN VIEW';
                   badgeBg = 'rgba(56, 189, 248, 0.15)';
                   badgeColor = 'var(--accent-blue)';
-                  const scr = (a.details && (a.details.screen || a.details.tab)) || 'Screen';
+                  const scr = this.escapeHtml((a.details && (a.details.screen || a.details.tab)) || 'Screen');
                   headline = `Viewed Screen: <strong>${scr}</strong>`;
-                  subtext = a.details && a.details.tab ? `Tab: ${a.details.tab}` : 'Navigated by athlete';
+                  subtext = this.escapeHtml(a.details && a.details.tab ? `Tab: ${a.details.tab}` : 'Navigated by athlete');
                 } else if (a.event_type === 'search_query' || (a.details && a.details.query)) {
                   badge = '🔍 SEARCH';
                   badgeBg = 'rgba(234, 179, 8, 0.15)';
                   badgeColor = 'var(--accent-amber)';
-                  headline = `Searched query: <strong>"${a.details.query}"</strong>`;
-                  subtext = `Origin: ${a.details.originScreen || 'App'}`;
+                  headline = `Searched query: <strong>"${this.escapeHtml(a.details.query || '')}"</strong>`;
+                  subtext = `Origin: ${this.escapeHtml(a.details.originScreen || 'App')}`;
                 } else if (a.event_type === 'WORKOUT_COMPLETE' || a.event_category === 'workout') {
                   badge = '🏋️ WORKOUT';
                   badgeBg = 'rgba(16, 185, 129, 0.15)';
                   badgeColor = 'var(--accent-emerald)';
-                  headline = `Completed: <strong>${(a.details && a.details.workoutTitle) || 'Workout Session'}</strong>`;
-                  subtext = (a.details && a.details.action) || 'Finished session';
+                  headline = `Completed: <strong>${this.escapeHtml((a.details && a.details.workoutTitle) || 'Workout Session')}</strong>`;
+                  subtext = this.escapeHtml((a.details && a.details.action) || 'Finished session');
                 } else if (a.event_type === 'ACCOUNT_CREATED' || a.event_category === 'auth') {
                   badge = '👤 ACCOUNT';
                   badgeBg = 'rgba(168, 85, 247, 0.15)';
                   badgeColor = 'var(--accent-purple)';
                   headline = `Account Created on App`;
-                  subtext = (a.details && a.details.action) || 'Registered profile';
+                  subtext = this.escapeHtml((a.details && a.details.action) || 'Registered profile');
                 } else {
-                  headline = `Event: ${a.event_type}`;
-                  subtext = JSON.stringify(a.details || {});
+                  headline = `Event: ${this.escapeHtml(a.event_type || '')}`;
+                  subtext = this.escapeHtml(JSON.stringify(a.details || {}));
                 }
 
-                const evTime = a.created_at ? new Date(a.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' }) : '—';
-                const devicePill = a.device_type ? `<span class="act-device-pill" style="font-size: 0.65rem;">${a.device_type}</span>` : '';
+                const evTime = a.created_at ? this.escapeHtml(new Date(a.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'medium' })) : '—';
+                const devicePill = a.device_type ? `<span class="act-device-pill" style="font-size: 0.65rem;">${this.escapeHtml(a.device_type)}</span>` : '';
 
                 return `
                   <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
@@ -1869,9 +1911,9 @@
               ` : workouts.map(w => `
                 <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 12px 14px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                   <div>
-                    <strong style="color: #FFF; font-size: 0.88rem;">${w.workout_title}</strong>
+                    <strong style="color: #FFF; font-size: 0.88rem;">${this.escapeHtml(w.workout_title)}</strong>
                     <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
-                      📅 ${w.completed_at} • ⏱️ ${w.duration_minutes} min • 🔥 ${w.calories_burned} kcal
+                      📅 ${this.escapeHtml(w.completed_at)} • ⏱️ ${Number(w.duration_minutes) || 0} min • 🔥 ${Number(w.calories_burned) || 0} kcal
                     </div>
                   </div>
                   <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); font-weight: 800; padding: 3px 8px; border-radius: 4px; white-space: nowrap;">
