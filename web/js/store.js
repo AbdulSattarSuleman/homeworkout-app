@@ -9,6 +9,9 @@ const HomeWorkoutStore = {
 
   supabaseClient: null,
   authListenerBound: false,
+  pendingPasswordRecovery: false,
+  _inflightLogIds: new Set(),
+  _uploadingLocal: false,
 
   initSupabase() {
     // Proactively purge any legacy client-side accounts vault so password hashes are never stored locally
@@ -38,6 +41,11 @@ const HomeWorkoutStore = {
                 }
               } else if (event === 'SIGNED_OUT') {
                 this.setToken(null);
+              } else if (event === 'PASSWORD_RECOVERY') {
+                // User arrived from a "reset password" email link
+                if (session && session.access_token) this.setToken(session.access_token);
+                this.pendingPasswordRecovery = true;
+                if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('hw:password-recovery'));
               }
             });
           }
@@ -110,20 +118,25 @@ const HomeWorkoutStore = {
     }
   },
 
+  // A display name built from the email when the user doesn't type one (e.g. "sara.k@gmail.com" -> "sara_k")
+  nameFromEmail(email) {
+    const local = String(email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    const base = local.slice(0, 20);
+    return base.length >= 3 ? base : `athlete_${base || Math.random().toString(36).slice(2, 6)}`;
+  },
+
   async register(username, email, password, fitnessLevel = 'Intermediate') {
-    const cleanUser = (username || '').trim();
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPass = (password || '').trim();
+    // The name is optional: if left empty, one is made from the email
+    const cleanUser = (username || '').trim() || this.nameFromEmail(cleanEmail);
 
     // 1. Strict Input Validations
-    if (!cleanUser) {
-      throw new Error('Please choose an athlete username.');
-    }
     if (cleanUser.length < 3) {
-      throw new Error('Username must be at least 3 characters long.');
+      throw new Error('Name must be at least 3 characters long (or leave it empty).');
     }
     if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.') || cleanEmail.endsWith('@homeworkout.app')) {
-      throw new Error('Please enter a valid personal email address (e.g. you@gmail.com). A real email is required for password recovery and account verification.');
+      throw new Error('Please enter a valid email address (e.g. you@gmail.com). It is used to sign in and to reset your password.');
     }
     if (!cleanPass) {
       throw new Error('Please enter a password.');
@@ -145,7 +158,9 @@ const HomeWorkoutStore = {
       email: finalEmail,
       password: cleanPass,
       options: {
-        data: { 
+        // If email confirmation is on, the link in the email brings the user back to the app
+        emailRedirectTo: (typeof window !== 'undefined') ? window.location.origin + window.location.pathname : undefined,
+        data: {
           username: cleanUser, 
           recovery_email: (cleanEmail && cleanEmail.includes('@')) ? cleanEmail : finalEmail,
           fitness_level: fitnessLevel 
@@ -164,20 +179,6 @@ const HomeWorkoutStore = {
       throw new Error('An account with this username or email already exists. Please choose another or sign in.');
     }
 
-    const token = (supaData && supaData.session) ? supaData.session.access_token : null;
-    if (token) {
-      this.setToken(token);
-    }
-
-    const user = this.getUser();
-    user.id = (supaData && supaData.user) ? supaData.user.id : ('usr_' + Date.now().toString(36));
-    user.username = cleanUser;
-    user.name = cleanUser;
-    user.email = (cleanEmail && cleanEmail.includes('@')) ? cleanEmail : finalEmail;
-    user.fitnessLevel = fitnessLevel;
-    user.isGuest = false;
-    this.saveUser(user);
-
     // Persist username-to-email mapping locally so user can sign in via username anytime
     try {
       const emailMap = JSON.parse(localStorage.getItem('hw_username_email_map') || '{}');
@@ -188,7 +189,27 @@ const HomeWorkoutStore = {
     // Clean up any legacy vault from localStorage
     try { localStorage.removeItem('hw_accounts_vault'); } catch (e) {}
 
-    return { status: 'success', user, token };
+    const token = (supaData && supaData.session) ? supaData.session.access_token : null;
+    if (!token) {
+      // Email confirmation is switched on: the account only becomes active after the user
+      // taps the link in their email. Everything saved on this device is kept until then.
+      return { status: 'confirm_email', email: finalEmail, username: cleanUser };
+    }
+    this.setToken(token);
+
+    const user = this.getUser();
+    user.id = supaData.user.id;
+    user.username = cleanUser;
+    user.name = cleanUser;
+    user.email = (cleanEmail && cleanEmail.includes('@')) ? cleanEmail : finalEmail;
+    user.fitnessLevel = fitnessLevel;
+    user.isGuest = false;
+    this.saveUser(user);
+
+    // Move what was done before signing up into the new account
+    if (user.plan && user.plan.goal) this.syncPlanToCloud(user.plan);
+    const uploaded = await this.moveLocalProgressToAccount();
+    return { status: 'success', user: this.getUser(), token, uploaded };
   },
 
   formatAuthEmail(cleanUser) {
@@ -232,7 +253,9 @@ const HomeWorkoutStore = {
     });
 
     if (error || !data || !data.user) {
-      // If failed and was a username without mapping, attempt with lowercase
+      if (error && /not confirmed/i.test(error.message || '')) {
+        throw new Error('Please confirm your email first: tap the link we sent to your inbox, then sign in.');
+      }
       throw new Error('No account found with these credentials or password was incorrect. Please check your credentials or create an account.');
     }
 
@@ -249,8 +272,9 @@ const HomeWorkoutStore = {
     user.name = user.username;
     user.email = data.user.email || targetEmail;
     user.isGuest = false;
-    this.restorePlanFromAccount(user, data.user);
+    const pushLocalPlan = this.restorePlanFromAccount(user, data.user);
     this.saveUser(user);
+    if (pushLocalPlan) this.syncPlanToCloud(user.plan);
 
     // Save username mapping
     try {
@@ -265,7 +289,99 @@ const HomeWorkoutStore = {
     // Sync profile & workout logs from Supabase cloud
     await this.syncFromCloud();
 
-    return { status: 'success', user, token };
+    // Workouts done on this device before signing in go into the account too
+    const uploaded = await this.moveLocalProgressToAccount();
+
+    return { status: 'success', user: this.getUser(), token, uploaded };
+  },
+
+  // ========================================================
+  // ACCOUNT HELPERS (sign-in state, Google, moving local progress)
+  // ========================================================
+  isSignedIn() {
+    const user = this.getUser();
+    const token = this.getToken();
+    return Boolean(token && user.username && !user.isGuest && !String(token).startsWith('guest_token_'));
+  },
+
+  isGoogleSignInEnabled() {
+    return Boolean(typeof window !== 'undefined' && window.APP_CONFIG && window.APP_CONFIG.GOOGLE_SIGN_IN);
+  },
+
+  async signInWithGoogle() {
+    const client = this.initSupabase();
+    if (!client) throw new Error('Sign-in service is unavailable. Please check your connection.');
+    // Leaves the page for Google, then comes back here signed in.
+    // Workouts saved on this device stay in the browser and are uploaded on return.
+    const { error } = await client.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + window.location.pathname }
+    });
+    if (error) throw new Error(error.message || 'Google sign-in failed.');
+  },
+
+  // Upload workouts that only exist on this device (done before signing in, or while offline)
+  async uploadLocalWorkouts() {
+    if (this._uploadingLocal) return 0;
+    const client = this.initSupabase();
+    if (!client) return 0;
+    this._uploadingLocal = true;
+    let uploaded = 0;
+    try {
+      const { data } = await client.auth.getSession();
+      const uid = data && data.session && data.session.user ? data.session.user.id : null;
+      if (!uid) return 0;
+
+      const pending = this.getWorkoutLogs().filter(l =>
+        l && l.completedAt && !l.cloudSynced && !this._inflightLogIds.has(String(l.id))
+      );
+      for (const log of pending) {
+        const blocks = (log.exercises || log.blocks || []).map(ex => ({
+          id: ex.id, name: ex.name, target: ex.target, sets: ex.sets || ex.planSets, reps: ex.reps || ex.planReps
+        }));
+        const { data: row, error } = await client.from('workout_logs').insert({
+          user_id: uid,
+          title: log.challengeTitle || 'Workout Session',
+          location_slug: 'home',
+          duration_minutes: log.durationMinutes || 18,
+          calories_burned: log.caloriesBurned || 145,
+          blocks,
+          completed_at: log.completedAt
+        }).select('id').single();
+        if (error) {
+          console.warn('[Supabase] local workout upload notice:', error.message);
+          continue;
+        }
+        if (row) {
+          this.replaceLocalLogId(log.id, row.id);
+          uploaded++;
+        }
+      }
+    } catch (e) {
+      console.warn('[Supabase] local workout upload notice:', e);
+    } finally {
+      this._uploadingLocal = false;
+    }
+    return uploaded;
+  },
+
+  async moveLocalProgressToAccount() {
+    return this.uploadLocalWorkouts();
+  },
+
+  // "Save your progress" prompt: only for people without an account who have trained,
+  // and at most once every 3 days after they tap "Not now"
+  shouldShowSavePrompt() {
+    if (this.isSignedIn()) return false;
+    if (this.getWorkoutLogs().length === 0) return false;
+    const dismissedAt = new Date(this.getUser().savePromptDismissedAt || 0).getTime();
+    return Date.now() - dismissedAt > 3 * 24 * 60 * 60 * 1000;
+  },
+
+  dismissSavePrompt() {
+    const user = this.getUser();
+    user.savePromptDismissedAt = new Date().toISOString();
+    this.saveUser(user);
   },
 
   async sendPasswordResetEmail(emailOrUser) {
@@ -417,11 +533,10 @@ const HomeWorkoutStore = {
 
   async syncSession() {
     const user = this.getUser();
+    const wasGuest = Boolean(user.isGuest);
 
-    // 1. Guest session: keep intact locally
-    if (user.isGuest) {
-      return user;
-    }
+    // 1. Guests are still checked: a guest who just signed in (e.g. back from Google)
+    //    now has a real account session, which replaces the guest session below.
 
     // 2. Obtain Supabase client (with slight grace wait if scripts are finishing)
     let client = this.initSupabase();
@@ -467,13 +582,13 @@ const HomeWorkoutStore = {
             user.createdAt = profile.created_at || user.createdAt;
           } else {
             // Profile row doesn't exist yet; create it
-            const username = (verifiedUser.user_metadata && verifiedUser.user_metadata.username) 
-              || user.username 
-              || (verifiedUser.email ? verifiedUser.email.split('@')[0] : 'Athlete');
+            const username = (verifiedUser.user_metadata && verifiedUser.user_metadata.username)
+              || (!wasGuest && user.username)
+              || this.nameFromEmail(verifiedUser.email);
             const nowIso = new Date().toISOString();
             user.username = username;
             user.name = username;
-            await client.from('profiles').upsert({
+            const { error: profileErr } = await client.from('profiles').upsert({
               id: verifiedUser.id,
               username: username,
               fitness_level: user.fitnessLevel || 'Intermediate',
@@ -484,11 +599,13 @@ const HomeWorkoutStore = {
               active_location_id: user.activeLocationId || 'home',
               created_at: verifiedUser.created_at || nowIso,
               updated_at: nowIso
-            }).catch(e => console.warn('[Supabase] Auto-create profile notice:', e));
+            });
+            if (profileErr) console.warn('[Supabase] Auto-create profile notice:', profileErr.message);
           }
 
-          this.restorePlanFromAccount(user, verifiedUser);
+          const pushLocalPlan = this.restorePlanFromAccount(user, verifiedUser);
           this.saveUser(user);
+          if (pushLocalPlan) this.syncPlanToCloud(user.plan);
           return user;
         }
       } catch (err) {
@@ -523,6 +640,9 @@ const HomeWorkoutStore = {
     this.setToken(null);
     try {
       localStorage.removeItem(this.KEYS.USER_PROGRESS);
+      // Workout history is in the account; remove it from this device so the next
+      // person using this phone doesn't see it (or get it added to their account)
+      localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
     } catch (e) {}
     const user = JSON.parse(JSON.stringify(this.initialState.user));
     user.username = null;
@@ -1208,17 +1328,20 @@ const HomeWorkoutStore = {
     }).catch(err => console.warn('[Supabase] plan sync notice:', err));
   },
 
-  // Adopt the plan saved on the account if it is newer than the one on this device
+  // Adopt the plan saved on the account if it is newer than the one on this device.
+  // Returns true when this device's plan is the newer one and should be uploaded.
   restorePlanFromAccount(user, authUser) {
     const remote = authUser && authUser.user_metadata && authUser.user_metadata.training_plan;
-    if (!remote || !remote.goal) return;
-    const local = user.plan;
+    const local = user.plan && user.plan.goal ? user.plan : null;
+    if (!remote || !remote.goal) return Boolean(local);
     const remoteTime = new Date(remote.updatedAt || 0).getTime();
     const localTime = new Date((local && local.updatedAt) || 0).getTime();
-    if (!local || !local.goal || remoteTime > localTime) {
+    if (!local || remoteTime > localTime) {
       user.plan = remote;
       user.planSkipped = false;
+      return false;
     }
+    return localTime > remoteTime;
   },
 
   // Old-style challenges (28-day plans etc.): which day comes next
@@ -1738,18 +1861,24 @@ const HomeWorkoutStore = {
       try {
         const { data: sessionData } = await client.auth.getSession();
         if (sessionData && sessionData.session && sessionData.session.user) {
-          const { data: inserted, error } = await client.from('workout_logs').insert({
-            user_id: sessionData.session.user.id,
-            title: title || 'Workout Session',
-            location_slug: 'home',
-            duration_minutes: durationMinutes || 18,
-            calories_burned: caloriesBurned || 145,
-            blocks: exercises || []
-          }).select('id').single();
-          if (error) {
-            console.warn('[Supabase] workout log insert error:', error.message);
-          } else if (inserted && localLogId) {
-            this.replaceLocalLogId(localLogId, inserted.id);
+          // Mark as "being uploaded" so uploadLocalWorkouts() doesn't send it a second time
+          if (localLogId) this._inflightLogIds.add(String(localLogId));
+          try {
+            const { data: inserted, error } = await client.from('workout_logs').insert({
+              user_id: sessionData.session.user.id,
+              title: title || 'Workout Session',
+              location_slug: 'home',
+              duration_minutes: durationMinutes || 18,
+              calories_burned: caloriesBurned || 145,
+              blocks: exercises || []
+            }).select('id').single();
+            if (error) {
+              console.warn('[Supabase] workout log insert error:', error.message);
+            } else if (inserted && localLogId) {
+              this.replaceLocalLogId(localLogId, inserted.id);
+            }
+          } finally {
+            if (localLogId) this._inflightLogIds.delete(String(localLogId));
           }
         }
       } catch (e) {

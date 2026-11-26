@@ -35,6 +35,17 @@ const HomeWorkoutApp = {
   async init() {
     this.activeFocusLevel = HomeWorkoutStore.getUserLevel();
 
+    // 0. Coming back from a sign-in link (Google, email confirmation, password reset)?
+    //    Let Supabase read the details in the address before the navigation code tidies it.
+    const initialHash = (typeof window !== 'undefined' && window.__hwInitialHash) || '';
+    if (/access_token=|refresh_token=|error_description=/.test(initialHash)) {
+      const client = HomeWorkoutStore.initSupabase();
+      if (client) {
+        try { await client.auth.getSession(); } catch (e) {}
+      }
+    }
+    window.addEventListener('hw:password-recovery', () => this.showPasswordRecovery());
+
     // 1. Initialize HTML5 History API & popstate listeners for seamless native back button navigation
     this.initNavigation();
 
@@ -43,6 +54,14 @@ const HomeWorkoutApp = {
       await HomeWorkoutStore.syncSession();
       await HomeWorkoutStore.syncFromCloud();
     } catch (e) {}
+
+    // Workouts done on this device before signing in (or while offline) go into the account
+    HomeWorkoutStore.moveLocalProgressToAccount().then(count => {
+      if (count > 0) {
+        this.renderTodayCard();
+        if (this.currentTab === 'report') this.renderReportScreen();
+      }
+    }).catch(() => {});
 
     // Match the Body Focus filters to the training plan, if there is one
     const plan = HomeWorkoutStore.getPlan();
@@ -60,11 +79,20 @@ const HomeWorkoutApp = {
     this.bindEvents();
 
     // 3. Detect if user opened the page from a password recovery link
-    const isRecoveryLink = (window.location.hash || '').includes('type=recovery');
-    this.checkForPasswordRecoveryHash();
+    const isRecoveryLink = /type=recovery/.test(initialHash) || HomeWorkoutStore.pendingPasswordRecovery;
+    if (isRecoveryLink) this.showPasswordRecovery();
+
+    // A sign-in link that failed (e.g. Google cancelled, or the link expired)
+    const errMatch = initialHash.match(/error_description=([^&]+)/);
+    if (errMatch) {
+      let message = errMatch[1];
+      try { message = decodeURIComponent(message.replace(/\+/g, ' ')); } catch (e) {}
+      this.openAuthModal('login');
+      this.showAuthFeedback(`Sign-in didn't finish: ${message}`, 'error');
+    }
 
     // 4. First visit: ask the 4 plan questions
-    if (!isRecoveryLink) this.maybeShowOnboarding();
+    if (!isRecoveryLink && !errMatch) this.maybeShowOnboarding();
   },
 
   onDatabaseLoaded() {
@@ -482,6 +510,11 @@ const HomeWorkoutApp = {
         <button class="today-start-btn ${doneToday ? 'secondary' : ''}" ${session.loading ? 'disabled' : ''} onclick="HomeWorkoutApp.startTodayWorkout()">
           ▶ ${doneToday ? 'Start next workout' : 'Start workout'}
         </button>
+        ${(!HomeWorkoutStore.isSignedIn() && HomeWorkoutStore.getWorkoutLogs().length > 0) ? `
+          <button class="today-save-row" onclick="HomeWorkoutApp.openSavePrompt()">
+            <span>⚠️ Saved on this phone only</span>
+            <strong>Save my progress ›</strong>
+          </button>` : ''}
       </div>`;
   },
 
@@ -1712,6 +1745,9 @@ const HomeWorkoutApp = {
     } else {
       alert(`🎉 WORKOUT COMPLETED!\n\nAwesome work!\n• Logged: "${workoutTitle}"\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥`);
     }
+
+    // No account yet? Offer to save their progress now that there is something worth keeping
+    this.maybeShowSavePrompt();
   },
 
   closeWorkoutRunner(fromPop = false) {
@@ -1887,19 +1923,13 @@ const HomeWorkoutApp = {
     }
   },
 
-  checkForPasswordRecoveryHash() {
-    try {
-      const hash = window.location.hash || '';
-      if (hash.includes('type=recovery') || (hash.includes('access_token=') && hash.includes('refresh_token='))) {
-        // Replace URL cleanly without reloading
-        if (window.history && window.history.replaceState) {
-          window.history.replaceState({ tab: 'training' }, '', window.location.pathname);
-        }
-        setTimeout(() => {
-          this.openNewPasswordModal();
-        }, 350);
-      }
-    } catch (e) {}
+  // Opens "Set new password" once, when the user arrives from a password reset email.
+  // (Only for type=recovery links: Google sign-in and email confirmation links also carry
+  // tokens in the address and must NOT open this.)
+  showPasswordRecovery() {
+    if (this._recoveryShown) return;
+    this._recoveryShown = true;
+    setTimeout(() => this.openNewPasswordModal(), 350);
   },
 
   // ========================================================
@@ -1957,7 +1987,8 @@ const HomeWorkoutApp = {
       'levelModalBackdrop',
       'goalModalBackdrop',
       'proModalBackdrop',
-      'swapExerciseModalBackdrop'
+      'swapExerciseModalBackdrop',
+      'saveProgressBackdrop'
     ];
     for (const id of modalBackdrops) {
       const modal = document.getElementById(id);
@@ -2286,23 +2317,25 @@ const HomeWorkoutApp = {
   // ========================================================
   authMode: 'login',
 
-  openAuthModal() {
+  openAuthModal(mode = 'login') {
     const user = HomeWorkoutStore.getUser();
-    const token = HomeWorkoutStore.getToken();
     const loggedInView = document.getElementById('authLoggedInView');
     const formView = document.getElementById('authFormView');
     const usernameEl = document.getElementById('authLoggedInUsername');
     const avatarEl = document.getElementById('authAvatarLetter');
+    const intro = document.getElementById('authModalIntro');
 
-    if (token && user.username && !user.isGuest) {
+    if (HomeWorkoutStore.isSignedIn()) {
       if (loggedInView) loggedInView.style.display = 'block';
       if (formView) formView.style.display = 'none';
       if (usernameEl) usernameEl.textContent = user.username;
       if (avatarEl) avatarEl.textContent = (user.username[0] || 'A').toUpperCase();
+      if (intro) intro.textContent = 'Your plan, workouts and streak are saved to your account.';
     } else {
       if (loggedInView) loggedInView.style.display = 'none';
       if (formView) formView.style.display = 'block';
-      this.switchAuthMode('login');
+      if (intro) intro.textContent = 'Save your plan, workouts and streak to a free account, so you never lose them and can use them on any device.';
+      this.switchAuthMode(mode === 'register' ? 'register' : 'login');
     }
 
     this.openModal('authModalBackdrop', 'auth');
@@ -2319,21 +2352,22 @@ const HomeWorkoutApp = {
     const box = document.getElementById('authInlineFeedback');
     if (!box) return;
     box.style.display = 'block';
+    // textContent (not innerHTML): messages can contain typed names or text from the address bar
     if (type === 'error') {
       box.style.background = '#FEE2E2';
       box.style.border = '1px solid #FCA5A5';
       box.style.color = '#B91C1C';
-      box.innerHTML = `⚠️ ${message}`;
+      box.textContent = `⚠️ ${message}`;
     } else if (type === 'success') {
       box.style.background = '#ECFDF5';
       box.style.border = '1px solid #6EE7B7';
       box.style.color = '#047857';
-      box.innerHTML = `✅ ${message}`;
+      box.textContent = `✅ ${message}`;
     } else {
       box.style.background = '#EFF6FF';
       box.style.border = '1px solid #BFDBFE';
       box.style.color = '#1D4ED8';
-      box.innerHTML = `ℹ️ ${message}`;
+      box.textContent = `ℹ️ ${message}`;
     }
   },
 
@@ -2362,6 +2396,10 @@ const HomeWorkoutApp = {
     const passwordGroup = document.getElementById('authPasswordGroup');
     const orGuestWrap = document.getElementById('authOrGuestWrap');
     const authModalTitle = document.getElementById('authModalTitle');
+    const googleWrap = document.getElementById('authGoogleWrap');
+    if (googleWrap) {
+      googleWrap.style.display = (mode !== 'forgot' && HomeWorkoutStore.isGoogleSignInEnabled()) ? 'block' : 'none';
+    }
 
     if (mode === 'forgot') {
       if (authModalTitle) authModalTitle.textContent = 'Account Recovery';
@@ -2382,7 +2420,7 @@ const HomeWorkoutApp = {
       }
       if (submitBtn) submitBtn.textContent = 'Send Password Reset Link';
     } else if (mode === 'register') {
-      if (authModalTitle) authModalTitle.textContent = 'Create Athlete Account';
+      if (authModalTitle) authModalTitle.textContent = 'Create your free account';
       if (tabSwitcher) tabSwitcher.style.display = 'flex';
       if (forgotNavRow) forgotNavRow.style.display = 'none';
       if (forgotNotice) forgotNotice.style.display = 'none';
@@ -2393,9 +2431,9 @@ const HomeWorkoutApp = {
       if (passwordGroup) passwordGroup.style.display = 'block';
       if (forgotLinkWrap) forgotLinkWrap.style.display = 'none';
       if (orGuestWrap) orGuestWrap.style.display = 'block';
-      if (usernameLabel) usernameLabel.textContent = 'Athlete Username';
-      if (usernameInput) usernameInput.placeholder = 'e.g. alex_fitness';
-      if (submitBtn) submitBtn.textContent = 'Create Account';
+      if (usernameLabel) usernameLabel.textContent = 'Your name (optional)';
+      if (usernameInput) usernameInput.placeholder = 'e.g. Sara';
+      if (submitBtn) submitBtn.textContent = 'Create free account';
     } else {
       // login mode
       if (authModalTitle) authModalTitle.textContent = 'Sign In to Your Account';
@@ -2409,10 +2447,78 @@ const HomeWorkoutApp = {
       if (passwordGroup) passwordGroup.style.display = 'block';
       if (forgotLinkWrap) forgotLinkWrap.style.display = 'block';
       if (orGuestWrap) orGuestWrap.style.display = 'block';
-      if (usernameLabel) usernameLabel.textContent = 'Email or Username';
-      if (usernameInput) usernameInput.placeholder = 'you@example.com or athlete_name';
+      if (usernameLabel) usernameLabel.textContent = 'Email';
+      if (usernameInput) usernameInput.placeholder = 'you@example.com';
       if (submitBtn) submitBtn.textContent = 'Sign In';
     }
+  },
+
+  async startGoogleSignIn() {
+    if (typeof TelemetryTracker !== 'undefined') TelemetryTracker.trackAuth('google_start', null);
+    try {
+      await HomeWorkoutStore.signInWithGoogle(); // leaves the page for Google
+    } catch (err) {
+      const authOpen = document.getElementById('authModalBackdrop')?.classList.contains('active');
+      if (!authOpen) {
+        this.closeSavePrompt();
+        this.openAuthModal('login');
+      }
+      this.showAuthFeedback(err.message || 'Google sign-in failed. Please try email instead.', 'error');
+    }
+  },
+
+  // ========================================================
+  // "SAVE YOUR PROGRESS" PROMPT (people without an account)
+  // ========================================================
+  maybeShowSavePrompt() {
+    if (HomeWorkoutStore.shouldShowSavePrompt()) {
+      setTimeout(() => this.openSavePrompt(), 400);
+    }
+  },
+
+  openSavePrompt() {
+    const count = HomeWorkoutStore.getWorkoutLogs().length;
+    const text = document.getElementById('saveProgressText');
+    if (text) {
+      text.textContent = count > 0
+        ? `Nice work! You've done ${count} workout${count === 1 ? '' : 's'}. Right now your plan and workouts are only saved on this phone.`
+        : 'Right now your plan and workouts are only saved on this phone.';
+    }
+    const googleWrap = document.getElementById('saveProgressGoogleWrap');
+    if (googleWrap) googleWrap.style.display = HomeWorkoutStore.isGoogleSignInEnabled() ? 'block' : 'none';
+    this.openModal('saveProgressBackdrop', 'save-progress');
+    if (typeof TelemetryTracker !== 'undefined') TelemetryTracker.trackScreen('save_progress_prompt', String(count));
+  },
+
+  closeSavePrompt(fromPop = false) {
+    this.closeModal('saveProgressBackdrop', fromPop);
+  },
+
+  // Swap the prompt for the sign-up/sign-in sheet without a "back" step in between
+  savePromptCreateAccount() {
+    this.closeModal('saveProgressBackdrop', true);
+    this.openAuthModal('register');
+  },
+
+  savePromptSignIn() {
+    this.closeModal('saveProgressBackdrop', true);
+    this.openAuthModal('login');
+  },
+
+  savePromptNotNow() {
+    HomeWorkoutStore.dismissSavePrompt();
+    this.closeSavePrompt();
+  },
+
+  // Re-draw everything that depends on who is signed in
+  refreshAfterAuthChange() {
+    this.renderHeader();
+    this.renderTodayCard();
+    this.renderWeeklyGoalCard();
+    this.renderChallengeCarousel();
+    this.renderBodyFocus();
+    this.renderSettingsScreen();
+    if (this.currentTab === 'report') this.renderReportScreen();
   },
 
   async submitAuthForm() {
@@ -2440,35 +2546,38 @@ const HomeWorkoutApp = {
         const masked = res.email ? res.email.replace(/(.{2})(.*)(@.*)/, '$1***$3') : target;
         this.showAuthFeedback(`📩 Password reset link sent to ${masked}! Check your email inbox (and spam folder) to reset your password.`, 'success');
       } else if (this.authMode === 'login') {
-        await HomeWorkoutStore.login(u, p);
-        this.showAuthFeedback(`Welcome back, ${u}! Signed in successfully.`, 'success');
+        const res = await HomeWorkoutStore.login(u, p);
+        const moved = res && res.uploaded ? ` ${res.uploaded} workout${res.uploaded === 1 ? '' : 's'} from this phone ${res.uploaded === 1 ? 'was' : 'were'} saved to your account.` : '';
+        this.showAuthFeedback(`Welcome back, ${res.user.username}!${moved}`, 'success');
         setTimeout(() => {
           this.closeAuthModal();
-          this.renderHeader();
-          this.renderWeeklyGoalCard();
-          this.renderBodyFocus();
-          this.renderSettingsScreen();
-        }, 700);
+          this.refreshAfterAuthChange();
+        }, moved ? 1600 : 700);
       } else {
-        // register mode
-        if (!u || u.length < 3) {
-          throw new Error('Please choose a username with at least 3 characters.');
+        // register mode: name is optional, email + password are required
+        if (u && u.length < 3) {
+          throw new Error('Name must be at least 3 characters (or leave it empty).');
         }
         if (!email || !email.includes('@') || !email.includes('.')) {
-          throw new Error('Please enter a valid personal email address (e.g. you@example.com). This is required for password recovery.');
+          throw new Error('Please enter a valid email address (e.g. you@example.com).');
         }
         if (!p || p.length < 8) {
           throw new Error('Please enter a password with at least 8 characters.');
         }
-        await HomeWorkoutStore.register(u, email, p, this.activeFocusLevel || 'Intermediate');
-        this.showAuthFeedback(`Account created successfully! Welcome, ${u}!`, 'success');
-        setTimeout(() => {
-          this.closeAuthModal();
-          this.renderHeader();
-          this.renderWeeklyGoalCard();
-          this.renderBodyFocus();
-          this.renderSettingsScreen();
-        }, 700);
+        const res = await HomeWorkoutStore.register(u, email, p, this.activeFocusLevel || 'Intermediate');
+        if (res.status === 'confirm_email') {
+          this.switchAuthMode('login');
+          const idField = document.getElementById('authUsernameInput');
+          if (idField) idField.value = res.email;
+          this.showAuthFeedback(`Almost done! We sent a link to ${res.email}. Open it to confirm your email, then sign in here. Your workouts on this phone will be saved to your account when you sign in.`, 'info');
+        } else {
+          const moved = res.uploaded ? ` ${res.uploaded} workout${res.uploaded === 1 ? '' : 's'} from this phone ${res.uploaded === 1 ? 'was' : 'were'} saved to it.` : '';
+          this.showAuthFeedback(`Your account is ready, ${res.user.username}!${moved}`, 'success');
+          setTimeout(() => {
+            this.closeAuthModal();
+            this.refreshAfterAuthChange();
+          }, moved ? 1600 : 900);
+        }
       }
 
       if (typeof TelemetryTracker !== 'undefined' && this.authMode !== 'forgot') {
@@ -2494,9 +2603,7 @@ const HomeWorkoutApp = {
       this.showAuthFeedback(`⚡ Guest session ready as "${data.user.username}". Starting session...`, 'success');
       setTimeout(() => {
         this.closeAuthModal();
-        this.renderHeader();
-        this.renderWeeklyGoalCard();
-        this.renderBodyFocus();
+        this.refreshAfterAuthChange();
       }, 500);
     } catch (err) {
       this.showAuthFeedback('Could not start guest session: ' + err.message, 'error');
@@ -2525,10 +2632,7 @@ const HomeWorkoutApp = {
     HomeWorkoutStore.logout();
     this.cancelLogoutPrompt();
     this.closeAuthModal();
-    this.renderHeader();
-    this.renderWeeklyGoalCard();
-    this.renderBodyFocus();
-    this.renderSettingsScreen();
+    this.refreshAfterAuthChange();
   },
 
   handleLogout() {
@@ -2659,11 +2763,11 @@ const HomeWorkoutApp = {
             </div>
             <div>
               <h4 style="font-weight: 800; font-size: 1rem; color: var(--text-main); margin: 0 0 2px 0;">${user.username ? user.username : 'Guest Athlete'}</h4>
-              <span style="font-size: 0.78rem; color: var(--text-muted);">${token && user.username && !user.isGuest ? '🟢 Cloud Sync Active' : '⚪ Offline / Guest Session'}</span>
+              <span style="font-size: 0.78rem; color: var(--text-muted);">${HomeWorkoutStore.isSignedIn() ? '🟢 Saved to your account' : '⚪ Saved on this phone only'}</span>
             </div>
           </div>
-          <button class="level-select-pill" onclick="HomeWorkoutApp.openAuthModal()" style="font-size: 0.78rem; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-            <span>${token && user.username && !user.isGuest ? 'Account' : 'Sign In'}</span>
+          <button class="level-select-pill" onclick="HomeWorkoutApp.openAuthModal('${HomeWorkoutStore.isSignedIn() ? 'login' : 'register'}')" style="font-size: 0.78rem; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+            <span>${HomeWorkoutStore.isSignedIn() ? 'Account' : 'Save progress'}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
