@@ -26,6 +26,11 @@ const HomeWorkoutApp = {
   timerSeconds: 30,
   timerInterval: null,
   isPaused: false,
+  restSecondsRemaining: 0,
+  restInterval: null,
+  audioCtx: null,
+  wakeLock: null,
+  _lastBeepAt: 0,
 
   // History Multi-Select & Selective Delete State
   historySelectionMode: false,
@@ -92,7 +97,10 @@ const HomeWorkoutApp = {
     }
 
     // 4. First visit: ask the 4 plan questions
-    if (!isRecoveryLink && !errMatch) this.maybeShowOnboarding();
+    // 5. A workout was in progress when the app was closed? Offer to resume it first.
+    if (!isRecoveryLink && !errMatch) {
+      if (!this.maybeOfferResume()) this.maybeShowOnboarding();
+    }
   },
 
   onDatabaseLoaded() {
@@ -194,6 +202,16 @@ const HomeWorkoutApp = {
         if (tab) this.switchTab(tab);
       });
     });
+
+    // Re-acquire Screen Wake Lock when returning to the tab mid-workout
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        const modal = document.getElementById('workoutRunnerModal');
+        if (document.visibilityState === 'visible' && modal && modal.classList.contains('active') && this.activeWorkout && this.activeWorkout.isPlanWorkout) {
+          this.requestWakeLock();
+        }
+      });
+    }
   },
 
   // The search bar at the top searches the exercise library
@@ -588,11 +606,19 @@ const HomeWorkoutApp = {
       currentDay: session.dayNumber,
       focus: session.focus,
       tip: session.tip,
-      exercises: session.exercises
+      location: session.location,
+      exercises: session.exercises.map(ex => {
+        const copy = { ...ex };
+        this.initExerciseLoggedSets(copy, session.location);
+        return copy;
+      })
     };
     this.activeExerciseIndex = 0;
     this.isPaused = false;
+    this.timerSeconds = 0;
     this.workoutStartedAt = Date.now();
+    this.stopRestTimer();
+    this.requestWakeLock();
 
     const modal = document.getElementById('workoutRunnerModal');
     if (!modal) return;
@@ -1583,6 +1609,144 @@ const HomeWorkoutApp = {
     this.loadCurrentExercise();
   },
 
+  escapeHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  parseRepRange(planReps) {
+    const nums = String(planReps || '').match(/\d+/g);
+    if (!nums || nums.length === 0) return { min: 10, max: 12 };
+    const min = parseInt(nums[0], 10);
+    const max = nums.length > 1 ? parseInt(nums[1], 10) : min;
+    return { min, max };
+  },
+
+  getOverloadSuggestion(exercise, lastSets) {
+    const { min, max } = this.parseRepRange(exercise && exercise.planReps);
+    if (!exercise || exercise.planSlot === 'cardio' || !Array.isArray(lastSets) || lastSets.length === 0) {
+      return { lastText: '', hintText: '', hitTopAll: false, suggestedWeight: null, suggestedReps: min };
+    }
+
+    const isBodyweight = exercise.equipment_tier === 'bodyweight';
+    const repsSummary = lastSets.map(s => Number(s.reps) || 0).join(', ');
+    // Only suggest more when ALL planned sets were done last time, each at the top of the range
+    const plannedSets = Math.max(1, Number(exercise.planSets) || lastSets.length);
+    const hitTopAll = lastSets.length >= plannedSets && lastSets.every(s => (Number(s.reps) || 0) >= max);
+
+    if (isBodyweight) {
+      const lastText = `Last time: ${repsSummary} reps`;
+      if (hitTopAll) {
+        const lastAvg = Math.max(max, Number(lastSets[0].reps) || max);
+        const targetReps = lastAvg + 1;
+        return {
+          lastText,
+          hintText: `💡 You hit ${repsSummary} last time: try ${targetReps} reps per set`,
+          hitTopAll: true,
+          suggestedWeight: null,
+          suggestedReps: targetReps
+        };
+      }
+      return {
+        lastText,
+        hintText: '💡 Same weight, aim for one more rep.',
+        hitTopAll: false,
+        suggestedWeight: null,
+        suggestedReps: null
+      };
+    }
+
+    const weights = lastSets.map(s => s.weight).filter(w => w !== null && w !== undefined && w !== '' && !isNaN(Number(w))).map(Number);
+    if (weights.length === 0) {
+      return {
+        lastText: `Last time: ${repsSummary} reps`,
+        hintText: '',
+        hitTopAll: false,
+        suggestedWeight: null,
+        suggestedReps: min
+      };
+    }
+
+    const allSameWeight = weights.length === lastSets.length && weights.every(w => w === weights[0]);
+    const lastText = allSameWeight
+      ? `Last time: ${weights[0]} kg × ${repsSummary}`
+      : `Last time: ${lastSets.map(s => (s.weight != null && s.weight !== '' ? `${s.weight} kg × ${s.reps}` : `${s.reps} reps`)).join(', ')}`;
+
+    const baseWeight = Math.max(...weights);
+    if (hitTopAll) {
+      const lowerCompounds = new Set(['squat', 'leg_press', 'deadlift', 'hinge', 'lunge']);
+      const tier = exercise.equipment_tier || '';
+      let inc = 2.5;
+      if (lowerCompounds.has(exercise.planSlot) && (tier === 'barbell' || tier === 'machine')) {
+        inc = 5;
+      } else if (tier === 'dumbbell' || tier === 'kettlebell') {
+        inc = 2;
+      } else if (tier === 'barbell' || tier === 'machine' || tier === 'cable') {
+        inc = 2.5;
+      }
+      const suggestedWeight = Math.round((baseWeight + inc) * 100) / 100;
+      return {
+        lastText,
+        hintText: `💡 You hit ${repsSummary} last time: try ${suggestedWeight} kg`,
+        hitTopAll: true,
+        suggestedWeight,
+        suggestedReps: min
+      };
+    }
+
+    return {
+      lastText,
+      hintText: '💡 Same weight, aim for one more rep.',
+      hitTopAll: false,
+      suggestedWeight: baseWeight,
+      suggestedReps: null
+    };
+  },
+
+  initExerciseLoggedSets(exercise, location = 'gym') {
+    if (!exercise || Array.isArray(exercise.loggedSets)) return;
+    if (exercise.planSlot === 'cardio') {
+      exercise.loggedSets = [location === 'gym' ? { minutes: 10, done: false } : { rounds: 3, seconds: 40, done: false }];
+      return;
+    }
+    const isBodyweight = exercise.equipment_tier === 'bodyweight';
+    const { min } = this.parseRepRange(exercise.planReps);
+    const count = Math.max(1, Number(exercise.planSets) || 3);
+    const lastSets = HomeWorkoutStore.getLastPerformance(exercise.id);
+    const suggestion = this.getOverloadSuggestion(exercise, lastSets);
+
+    exercise.loggedSets = Array.from({ length: count }, (_, idx) => {
+      if (isBodyweight) {
+        let reps = min;
+        if (suggestion.hitTopAll && suggestion.suggestedReps) {
+          const prevR = lastSets && lastSets[idx] ? Number(lastSets[idx].reps) : null;
+          reps = prevR ? prevR + 1 : suggestion.suggestedReps;
+        } else if (lastSets && lastSets.length > 0) {
+          const prev = lastSets[idx] || lastSets[lastSets.length - 1];
+          reps = prev && prev.reps != null ? prev.reps : min;
+        }
+        return { weight: null, reps, done: false };
+      }
+
+      if (suggestion.hitTopAll && suggestion.suggestedWeight != null) {
+        return { weight: suggestion.suggestedWeight, reps: min, done: false };
+      }
+      if (lastSets && lastSets.length > 0) {
+        const prev = lastSets[idx] || lastSets[lastSets.length - 1];
+        const w = (prev && prev.weight !== null && prev.weight !== undefined && prev.weight !== '')
+          ? prev.weight
+          : (suggestion.suggestedWeight != null ? suggestion.suggestedWeight : '');
+        const r = (prev && prev.reps !== null && prev.reps !== undefined && prev.reps !== '') ? prev.reps : min;
+        return { weight: w, reps: r, done: false };
+      }
+      return { weight: '', reps: min, done: false };
+    });
+  },
+
   loadCurrentExercise() {
     const exercise = this.activeWorkout.exercises[this.activeExerciseIndex];
     if (!exercise) {
@@ -1591,8 +1755,13 @@ const HomeWorkoutApp = {
     }
 
     const isPlan = Boolean(this.activeWorkout.isPlanWorkout && exercise.planSets);
-    // Plan workouts: the clock counts up (time on this exercise) and you tap NEXT when your sets are done
-    this.timerSeconds = isPlan ? 0 : (exercise.durationSeconds || 30);
+    // Plan workouts keep total workout time counting up across exercises
+    if (!isPlan) {
+      this.timerSeconds = exercise.durationSeconds || 30;
+    }
+
+    const modal = document.getElementById('workoutRunnerModal');
+    if (modal) modal.classList.toggle('plan-mode', isPlan);
 
     const titleEl = document.getElementById('runnerExTitle');
     const subEl = document.getElementById('runnerExSub');
@@ -1602,17 +1771,28 @@ const HomeWorkoutApp = {
     const targetBadge = document.getElementById('runnerTargetBadge');
     const equipBadge = document.getElementById('runnerEquipBadge');
     const instructionsBox = document.getElementById('runnerInstructionsBox');
+    const lastTimeEl = document.getElementById('runnerLastTime');
+    const hintEl = document.getElementById('runnerOverloadHint');
+    const restEl = document.getElementById('runnerRestBanner');
+    const setsArea = document.getElementById('runnerSetsArea');
+    const swapBtn = document.getElementById('runnerSwapBtn');
 
     if (titleEl) titleEl.textContent = exercise.name;
     if (subEl) {
-      subEl.textContent = isPlan
-        ? `${exercise.planSets} sets × ${exercise.planReps}${exercise.planRest ? ` • rest ${exercise.planRest}s between sets` : ''}`
-        : `${exercise.reps} • ${exercise.durationSeconds}s duration`;
+      if (isPlan && exercise.planSlot === 'cardio') {
+        const isGym = this.activeWorkout.location === 'gym';
+        subEl.textContent = isGym ? '10 min cardio finisher' : '3 rounds × 40 sec, 20 sec rest';
+      } else {
+        subEl.textContent = isPlan
+          ? `${exercise.planSets} sets × ${exercise.planReps}${exercise.planRest ? ` • rest ${exercise.planRest}s between sets` : ''}`
+          : `${exercise.reps} • ${exercise.durationSeconds}s duration`;
+      }
     }
     if (badgeEl) badgeEl.textContent = `${this.activeWorkout.title} (${this.activeExerciseIndex + 1}/${this.activeWorkout.exercises.length})`;
 
     if (targetBadge) targetBadge.textContent = `🎯 ${exercise.target || exercise.muscle || 'Full Body'}`;
     if (equipBadge) equipBadge.textContent = `☑️ ${exercise.equipment || 'No Equipment'}`;
+    if (swapBtn) swapBtn.style.display = isPlan ? 'inline-flex' : 'none';
 
     // Looping Animated GIF
     if (gifImg && exercise.gifUrl) {
@@ -1627,23 +1807,64 @@ const HomeWorkoutApp = {
       }
     }
 
-    // Instructions Steps Box
+    // Plan workout set logger rows + Last time & overload hint
+    if (isPlan) {
+      this.initExerciseLoggedSets(exercise, this.activeWorkout.location);
+      const lastSets = exercise.planSlot === 'cardio' ? null : HomeWorkoutStore.getLastPerformance(exercise.id);
+      const suggestion = this.getOverloadSuggestion(exercise, lastSets);
+      if (lastTimeEl) {
+        if (suggestion.lastText) {
+          lastTimeEl.textContent = suggestion.lastText;
+          lastTimeEl.style.display = 'block';
+        } else {
+          lastTimeEl.style.display = 'none';
+          lastTimeEl.textContent = '';
+        }
+      }
+      if (hintEl) {
+        if (suggestion.hintText) {
+          hintEl.textContent = suggestion.hintText;
+          hintEl.style.display = 'inline-block';
+        } else {
+          hintEl.style.display = 'none';
+          hintEl.textContent = '';
+        }
+      }
+      if (setsArea) setsArea.style.display = 'flex';
+      this.renderRunnerSetsArea();
+    } else {
+      if (setsArea) {
+        setsArea.style.display = 'none';
+        setsArea.innerHTML = '';
+      }
+      if (lastTimeEl) lastTimeEl.style.display = 'none';
+      if (hintEl) hintEl.style.display = 'none';
+      if (restEl) restEl.style.display = 'none';
+    }
+    this.updateRunnerNextButton();
+
+    // Instructions Steps Box (all dynamic text escaped)
     if (instructionsBox) {
       let instContent = '';
       if (typeof exercise.instructions === 'string' && exercise.instructions.trim().length > 0) {
-        instContent = `<div class="runner-instruction-step">${exercise.instructions}</div>`;
+        instContent = `<div class="runner-instruction-step">${this.escapeHtml(exercise.instructions)}</div>`;
       } else if (Array.isArray(exercise.instructions) && exercise.instructions.length > 0) {
         instContent = exercise.instructions.map((step, idx) => `
           <div class="runner-instruction-step">
-            <strong>Step ${idx + 1}:</strong> ${step}
+            <strong>Step ${idx + 1}:</strong> ${this.escapeHtml(step)}
           </div>
         `).join('');
       } else {
-        instContent = `<div class="runner-instruction-step">Perform ${exercise.name} in steady rhythm, engaging your target muscles throughout.</div>`;
+        instContent = `<div class="runner-instruction-step">Perform ${this.escapeHtml(exercise.name)} in steady rhythm, engaging your target muscles throughout.</div>`;
       }
 
+      const isLastEx = this.activeExerciseIndex >= (this.activeWorkout.exercises || []).length - 1;
+      const nextWord = isLastEx ? 'FINISH' : 'NEXT';
+      const tipTail = exercise.planSlot === 'cardio'
+        ? `Tap <strong>${nextWord}</strong> when your cardio finisher is done.`
+        : `Tap <strong>${nextWord}</strong> when all ${this.escapeHtml(exercise.planSets)} sets are done.`;
       const planTip = isPlan && this.activeWorkout.tip
-        ? `<div class="runner-plan-tip">💡 ${this.activeWorkout.tip}<br>Tap <strong>NEXT</strong> when all ${exercise.planSets} sets are done.</div>`
+        ? `<div class="runner-plan-tip">💡 ${this.escapeHtml(this.activeWorkout.tip)}<br>${tipTail}</div>`
         : '';
       instructionsBox.innerHTML = `
         ${planTip}
@@ -1657,9 +1878,584 @@ const HomeWorkoutApp = {
     // Reset Pause button state
     this.isPaused = false;
     const pauseBtn = document.getElementById('runnerPauseBtn');
-    if (pauseBtn) pauseBtn.textContent = '⏸ PAUSE';
+    if (pauseBtn) {
+      pauseBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg><span>PAUSE</span>`;
+    }
 
     this.startTimer();
+    this.persistActiveWorkout();
+  },
+
+  renderRunnerSetsArea() {
+    const setsArea = document.getElementById('runnerSetsArea');
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!setsArea || !exercise || !this.activeWorkout.isPlanWorkout) return;
+
+    this.initExerciseLoggedSets(exercise, this.activeWorkout.location);
+
+    if (exercise.planSlot === 'cardio') {
+      const isGym = this.activeWorkout.location === 'gym';
+      const entry = exercise.loggedSets[0] || { done: false };
+      const prescription = isGym ? '10 min' : '3 rounds × 40 sec, 20 sec rest';
+      setsArea.innerHTML = `
+        <div class="cardio-finisher-card">
+          <div class="cardio-prescription-text">${this.escapeHtml(prescription)}</div>
+          <button type="button" class="cardio-done-btn ${entry.done ? 'done' : ''}" onclick="HomeWorkoutApp.toggleCardioDone()">
+            ${entry.done ? '✓ Cardio Done' : 'Done'}
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    const isBodyweight = exercise.equipment_tier === 'bodyweight';
+    const baseSets = Math.max(1, Number(exercise.planSets) || 3);
+
+    const rowsHtml = exercise.loggedSets.map((set, idx) => {
+      const weightVal = (set.weight === null || set.weight === undefined) ? '' : String(set.weight);
+      const repsVal = (set.reps === null || set.reps === undefined) ? '' : String(set.reps);
+      const canRemove = idx >= baseSets && exercise.loggedSets.length > 1;
+      return `
+        <div class="set-row ${set.done ? 'done' : ''}" data-set-idx="${idx}">
+          <span class="set-num-label">Set ${idx + 1}</span>
+          ${isBodyweight ? '' : `
+            <input type="text" inputmode="decimal" class="set-input set-weight-input"
+              value="${this.escapeHtml(weightVal)}" placeholder="—"
+              aria-label="Set ${idx + 1} weight in kg"
+              oninput="HomeWorkoutApp.updateSetField(${idx}, 'weight', this.value)"
+              onblur="HomeWorkoutApp.normalizeSetField(${idx}, 'weight', this)">
+            <span class="set-unit">kg</span>
+            <span class="set-times">×</span>
+          `}
+          <input type="text" inputmode="numeric" class="set-input set-reps-input"
+            value="${this.escapeHtml(repsVal)}" placeholder="0"
+            aria-label="Set ${idx + 1} reps"
+            oninput="HomeWorkoutApp.updateSetField(${idx}, 'reps', this.value)"
+            onblur="HomeWorkoutApp.normalizeSetField(${idx}, 'reps', this)">
+          <span class="set-unit">reps</span>
+          <button type="button" class="set-done-btn ${set.done ? 'done' : ''}"
+            aria-label="Mark set ${idx + 1} done"
+            onclick="HomeWorkoutApp.toggleSetDone(${idx})">✓</button>
+          ${canRemove ? `
+            <button type="button" class="set-remove-btn" aria-label="Remove set ${idx + 1}"
+              onclick="HomeWorkoutApp.removeExtraSet(${idx})">✕</button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    setsArea.innerHTML = `
+      ${rowsHtml}
+      <button type="button" class="add-set-btn" onclick="HomeWorkoutApp.addExtraSet()">+ Add set</button>
+    `;
+  },
+
+  updateSetField(setIdx, field, rawValue) {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise || !exercise.loggedSets || !exercise.loggedSets[setIdx]) return;
+    const set = exercise.loggedSets[setIdx];
+    const clean = String(rawValue || '').replace(',', '.').trim();
+    if (clean === '') {
+      set[field] = '';
+    } else if (field === 'weight') {
+      if (/^\d*\.?\d*$/.test(clean)) {
+        set.weight = clean;
+      }
+    } else if (field === 'reps') {
+      if (/^\d*$/.test(clean)) {
+        set.reps = clean;
+      }
+    }
+    this.persistActiveWorkout();
+  },
+
+  normalizeSetField(setIdx, field, inputEl) {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise || !exercise.loggedSets || !exercise.loggedSets[setIdx]) return;
+    const set = exercise.loggedSets[setIdx];
+    const val = set[field];
+    if (val === '' || val === null || val === undefined) {
+      set[field] = (field === 'weight' && exercise.equipment_tier === 'bodyweight') ? null : '';
+      if (inputEl) inputEl.value = '';
+      return;
+    }
+    const num = field === 'reps' ? parseInt(val, 10) : parseFloat(val);
+    if (isNaN(num) || num < 0) {
+      set[field] = '';
+      if (inputEl) inputEl.value = '';
+    } else {
+      set[field] = field === 'reps' ? num : Math.round(num * 100) / 100;
+      if (inputEl) inputEl.value = String(set[field]);
+    }
+    this.persistActiveWorkout();
+  },
+
+  toggleSetDone(setIdx) {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise || !exercise.loggedSets || !exercise.loggedSets[setIdx]) return;
+    const set = exercise.loggedSets[setIdx];
+    set.done = !set.done;
+
+    if (set.done) {
+      this.unlockAudioContext();
+      if (exercise.equipment_tier === 'bodyweight') {
+        set.weight = null;
+      } else if (set.weight === '' || set.weight === undefined) {
+        set.weight = null;
+      } else if (set.weight !== null) {
+        const w = parseFloat(set.weight);
+        set.weight = isNaN(w) ? null : Math.round(w * 100) / 100;
+      }
+      const r = parseInt(set.reps, 10);
+      set.reps = isNaN(r) ? 0 : r;
+
+      // Most people lift the same weight every set: fill the next empty sets with it
+      if (set.weight !== null && set.weight > 0) {
+        let filled = false;
+        exercise.loggedSets.forEach((other, i) => {
+          if (i > setIdx && !other.done && (other.weight === '' || other.weight === null || other.weight === undefined)) {
+            other.weight = set.weight;
+            filled = true;
+          }
+        });
+        if (filled) {
+          document.querySelectorAll('#runnerSetsArea .set-row').forEach(rowEl => {
+            const i = Number(rowEl.getAttribute('data-set-idx'));
+            const input = rowEl.querySelector('.set-weight-input');
+            const s = exercise.loggedSets[i];
+            if (input && i > setIdx && s && !s.done && s.weight !== null && s.weight !== '' && input.value === '') {
+              input.value = String(s.weight);
+            }
+          });
+        }
+      }
+
+      if (exercise.planRest > 0 && exercise.planSlot !== 'cardio') {
+        this.startRestTimer(exercise.planRest);
+      }
+    }
+    this.persistActiveWorkout();
+
+    const rowEl = document.querySelector(`#runnerSetsArea .set-row[data-set-idx="${setIdx}"]`);
+    if (rowEl) {
+      rowEl.classList.toggle('done', set.done);
+      const btn = rowEl.querySelector('.set-done-btn');
+      if (btn) btn.classList.toggle('done', set.done);
+    }
+    this.updateRunnerNextButton();
+  },
+
+  startRestTimer(seconds) {
+    this.stopRestTimer();
+    this.restSecondsRemaining = Math.max(1, Number(seconds) || 60);
+    this.renderRestBanner();
+    this.restInterval = setInterval(() => {
+      if (this.isPaused) return;
+      this.restSecondsRemaining--;
+      if (this.restSecondsRemaining <= 0) {
+        this.stopRestTimer();
+        this.playRestDoneCue();
+      } else {
+        this.updateRestDisplay();
+      }
+    }, 1000);
+  },
+
+  renderRestBanner() {
+    const banner = document.getElementById('runnerRestBanner');
+    if (!banner) return;
+    if (this.restSecondsRemaining <= 0) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      return;
+    }
+    banner.style.display = 'flex';
+    banner.innerHTML = `
+      <div class="runner-rest-left">
+        <span class="runner-rest-label">Rest Timer</span>
+        <span class="runner-rest-num" id="runnerRestNum">${this.formatSeconds(this.restSecondsRemaining)}</span>
+      </div>
+      <div class="runner-rest-actions">
+        <button type="button" class="runner-rest-btn" onclick="HomeWorkoutApp.adjustRestTimer(-15)">−15s</button>
+        <button type="button" class="runner-rest-btn" onclick="HomeWorkoutApp.adjustRestTimer(15)">+15s</button>
+        <button type="button" class="runner-rest-btn skip" onclick="HomeWorkoutApp.skipRestTimer()">Skip</button>
+      </div>
+    `;
+  },
+
+  updateRestDisplay() {
+    const el = document.getElementById('runnerRestNum');
+    if (el) el.textContent = this.formatSeconds(this.restSecondsRemaining);
+  },
+
+  formatSeconds(total) {
+    const t = Math.max(0, Math.floor(Number(total) || 0));
+    const mins = Math.floor(t / 60);
+    const secs = t % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  },
+
+  adjustRestTimer(delta) {
+    if (!this.restInterval && this.restSecondsRemaining <= 0) return;
+    this.restSecondsRemaining = Math.max(0, this.restSecondsRemaining + delta);
+    if (this.restSecondsRemaining <= 0) {
+      this.stopRestTimer();
+    } else {
+      this.updateRestDisplay();
+    }
+  },
+
+  skipRestTimer() {
+    this.stopRestTimer();
+  },
+
+  stopRestTimer() {
+    if (this.restInterval) {
+      clearInterval(this.restInterval);
+      this.restInterval = null;
+    }
+    this.restSecondsRemaining = 0;
+    const banner = document.getElementById('runnerRestBanner');
+    if (banner) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+    }
+  },
+
+  unlockAudioContext() {
+    if (typeof window === 'undefined') return null;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    try {
+      if (!this.audioCtx) {
+        this.audioCtx = new AudioCtx();
+      }
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+      return this.audioCtx;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  playRestDoneCue() {
+    this._lastBeepAt = Date.now();
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try { navigator.vibrate([200, 100, 200]); } catch (e) {}
+    }
+    const ctx = this.unlockAudioContext();
+    if (!ctx) return;
+    try {
+      const playPip = (offset, freq, duration) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
+        gain.gain.setValueAtTime(0.001, ctx.currentTime + offset);
+        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + offset);
+        osc.stop(ctx.currentTime + offset + duration + 0.02);
+      };
+      playPip(0, 880, 0.16);
+      playPip(0.22, 1046.5, 0.22);
+    } catch (e) {}
+  },
+
+  requestWakeLock() {
+    if (typeof navigator === 'undefined' || !navigator.wakeLock || typeof navigator.wakeLock.request !== 'function') {
+      return;
+    }
+    if (this.wakeLock) return;
+    navigator.wakeLock.request('screen').then(sentinel => {
+      this.wakeLock = sentinel;
+      if (sentinel && typeof sentinel.addEventListener === 'function') {
+        sentinel.addEventListener('release', () => {
+          if (this.wakeLock === sentinel) this.wakeLock = null;
+        });
+      }
+    }).catch(() => {});
+  },
+
+  releaseWakeLock() {
+    if (!this.wakeLock) return;
+    const lock = this.wakeLock;
+    this.wakeLock = null;
+    try {
+      lock.release().catch(() => {});
+    } catch (e) {}
+  },
+
+  // ========================================================
+  // RESUME A WORKOUT AFTER A RELOAD (phone locked, app closed...)
+  // ========================================================
+  persistActiveWorkout() {
+    if (!this.activeWorkout || !this.activeWorkout.isPlanWorkout) return;
+    const modal = document.getElementById('workoutRunnerModal');
+    if (!modal || !modal.classList.contains('active')) return;
+    HomeWorkoutStore.saveActiveWorkout({
+      activeWorkout: this.activeWorkout,
+      activeExerciseIndex: this.activeExerciseIndex,
+      timerSeconds: this.timerSeconds,
+      workoutStartedAt: this.workoutStartedAt
+    });
+  },
+
+  // Returns true when the "Resume your workout?" sheet was shown
+  maybeOfferResume() {
+    const saved = HomeWorkoutStore.getActiveWorkout();
+    const backdrop = document.getElementById('resumeWorkoutBackdrop');
+    if (!saved || !backdrop) return false;
+    const w = saved.activeWorkout;
+    const setsLogged = (w.exercises || []).reduce((n, ex) =>
+      n + (Array.isArray(ex.loggedSets) ? ex.loggedSets.filter(s => s && s.done).length : 0), 0);
+    const mins = Math.max(1, Math.round((Date.now() - Number(saved.savedAt || Date.now())) / 60000));
+    const text = document.getElementById('resumeWorkoutText');
+    if (text) {
+      text.textContent = `${w.title}: ${setsLogged} set${setsLogged === 1 ? '' : 's'} logged, last used ${mins} min ago.`;
+    }
+    this.openModal('resumeWorkoutBackdrop', 'resume');
+    return true;
+  },
+
+  resumeSavedWorkout() {
+    const saved = HomeWorkoutStore.getActiveWorkout();
+    this.closeModal('resumeWorkoutBackdrop', true);
+    if (!saved || !saved.activeWorkout || !Array.isArray(saved.activeWorkout.exercises)) return;
+    this.activeWorkout = saved.activeWorkout;
+    const last = this.activeWorkout.exercises.length - 1;
+    this.activeExerciseIndex = Math.min(Math.max(0, Number(saved.activeExerciseIndex) || 0), last);
+    this.timerSeconds = Number(saved.timerSeconds) || 0;
+    this.workoutStartedAt = Number(saved.workoutStartedAt) || Date.now();
+    this.isPaused = false;
+    this.stopRestTimer();
+    const modal = document.getElementById('workoutRunnerModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    this.pushNavState({ modal: 'workoutRunnerModal' }, 'Workout Runner', '#runner');
+    this.loadCurrentExercise();
+    this.requestWakeLock();
+  },
+
+  discardSavedWorkout() {
+    HomeWorkoutStore.clearActiveWorkout();
+    this.closeModal('resumeWorkoutBackdrop');
+  },
+
+  toggleCardioDone() {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise || !exercise.loggedSets || !exercise.loggedSets[0]) return;
+    exercise.loggedSets[0].done = !exercise.loggedSets[0].done;
+    this.renderRunnerSetsArea();
+    this.updateRunnerNextButton();
+    this.persistActiveWorkout();
+  },
+
+  addExtraSet() {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise) return;
+    this.initExerciseLoggedSets(exercise, this.activeWorkout.location);
+    const last = exercise.loggedSets[exercise.loggedSets.length - 1];
+    const isBodyweight = exercise.equipment_tier === 'bodyweight';
+    const { min } = this.parseRepRange(exercise.planReps);
+    exercise.loggedSets.push({
+      weight: isBodyweight ? null : (last && last.weight !== undefined && last.weight !== null ? last.weight : ''),
+      reps: last && last.reps !== undefined && last.reps !== '' ? last.reps : min,
+      done: false
+    });
+    this.renderRunnerSetsArea();
+    this.updateRunnerNextButton();
+    this.persistActiveWorkout();
+  },
+
+  removeExtraSet(setIdx) {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise || !exercise.loggedSets) return;
+    const baseSets = Math.max(1, Number(exercise.planSets) || 3);
+    if (setIdx < baseSets || exercise.loggedSets.length <= 1) return;
+    exercise.loggedSets.splice(setIdx, 1);
+    this.renderRunnerSetsArea();
+    this.updateRunnerNextButton();
+    this.persistActiveWorkout();
+  },
+
+  updateRunnerNextButton() {
+    const nextBtn = document.getElementById('runnerNextBtn');
+    const nextLabel = document.getElementById('runnerNextBtnLabel');
+    if (!nextBtn) return;
+
+    const isPlan = Boolean(this.activeWorkout && this.activeWorkout.isPlanWorkout);
+    if (!isPlan) {
+      nextBtn.classList.remove('runner-next-ready');
+      if (nextLabel) nextLabel.textContent = 'NEXT';
+      return;
+    }
+
+    const exercises = this.activeWorkout.exercises || [];
+    const isLast = this.activeExerciseIndex >= exercises.length - 1;
+    const current = exercises[this.activeExerciseIndex];
+    const allDone = Boolean(
+      current && Array.isArray(current.loggedSets) && current.loggedSets.length > 0 && current.loggedSets.every(s => s.done)
+    );
+    nextBtn.classList.toggle('runner-next-ready', allDone);
+    if (nextLabel) nextLabel.textContent = isLast ? 'FINISH' : 'NEXT';
+  },
+
+  getPlanSwapCandidates() {
+    const exercise = this.activeWorkout && this.activeWorkout.exercises
+      ? this.activeWorkout.exercises[this.activeExerciseIndex]
+      : null;
+    if (!exercise || typeof TrainingPlan === 'undefined') return [];
+
+    const loc = (this.activeWorkout.location || 'gym').toLowerCase();
+    const usedIds = new Set((this.activeWorkout.exercises || []).map(e => String(e.id)));
+    const seen = new Set(usedIds);
+    const results = [];
+
+    // 1. Other exercises in the same TrainingPlan.SLOTS[planSlot] list for current location
+    const slot = exercise.planSlot ? TrainingPlan.SLOTS[exercise.planSlot] : null;
+    if (slot) {
+      const slotIds = [...(slot[loc] || slot.gym || [])];
+      for (const id of slotIds) {
+        if (seen.has(String(id))) continue;
+        const cand = TrainingPlan.lookup(id);
+        if (!cand) continue;
+        seen.add(String(cand.id));
+        results.push({ ...cand, _swapSource: 'Plan option' });
+      }
+    }
+
+    // 2. Up to 3 dataset exercises with the same movement_pattern and allowed equipment
+    if (typeof ExerciseDataset !== 'undefined' && Array.isArray(ExerciseDataset.allExercises)) {
+      const targetPattern = exercise.movement_pattern || ExerciseDataset.inferPattern(exercise);
+      const preset = ExerciseDataset.LOCATION_PRESETS && ExerciseDataset.LOCATION_PRESETS[loc];
+      const allowedEquip = preset ? preset.equipment : ['bodyweight', 'dumbbell', 'bands'];
+      const targetTier = Number(exercise.progression_tier) || 2;
+      const isCardio = exercise.planSlot === 'cardio';
+
+      // Skip stretches, balance drills and odd variants that only share a movement tag
+      const notAnExercise = /stretch|balance|pose|massage|roll(er)?\b|\(male\)|\(female\)/i;
+      const datasetMatches = ExerciseDataset.allExercises
+        .filter(cand => {
+          if (!cand || seen.has(String(cand.id))) return false;
+          if (notAnExercise.test(cand.name || '')) return false;
+          if (isCardio) {
+            if (cand.target !== 'Cardiovascular System') return false;
+          } else {
+            const p = cand.movement_pattern || ExerciseDataset.inferPattern(cand);
+            if (p !== targetPattern) return false;
+            // Must work the same main muscle
+            if (cand.target !== exercise.target) return false;
+          }
+          const equipTier = cand.equipment_tier || 'bodyweight';
+          return allowedEquip.includes(equipTier);
+        })
+        .slice()
+        .sort((a, b) => Math.abs((Number(a.progression_tier) || 2) - targetTier) - Math.abs((Number(b.progression_tier) || 2) - targetTier))
+        .slice(0, 3);
+
+      for (const cand of datasetMatches) {
+        seen.add(String(cand.id));
+        results.push({ ...cand, _swapSource: 'Similar exercise' });
+      }
+    }
+
+    return results;
+  },
+
+  openPlanSwapSheet() {
+    if (!this.activeWorkout || !this.activeWorkout.isPlanWorkout) return;
+    const exercise = this.activeWorkout.exercises[this.activeExerciseIndex];
+    const backdrop = document.getElementById('planSwapSheetBackdrop');
+    const listEl = document.getElementById('planSwapOptionsList');
+    const subEl = document.getElementById('planSwapSheetSub');
+    if (!backdrop || !listEl || !exercise) return;
+
+    if (subEl) {
+      subEl.textContent = `Swapping "${exercise.name}" for today's workout only (${exercise.planSets} × ${exercise.planReps}).`;
+    }
+
+    const candidates = this.getPlanSwapCandidates();
+    if (candidates.length === 0) {
+      listEl.innerHTML = `<div style="text-align:center; padding: 20px; color: var(--text-muted); font-size: 0.85rem;">No alternative exercises available for this slot.</div>`;
+    } else {
+      const thumbFallback = `this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'44\\' height=\\'44\\'><rect width=\\'44\\' height=\\'44\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'58%\\' text-anchor=\\'middle\\' font-size=\\'18\\'>💪</text></svg>'`;
+      listEl.innerHTML = candidates.map(cand => {
+        const cleanName = typeof TrainingPlan !== 'undefined' ? TrainingPlan.cleanName(cand.name) : cand.name;
+        return `
+          <div class="swap-option-card" onclick="HomeWorkoutApp.selectPlanSwapExercise('${this.escapeHtml(cand.id)}')">
+            <div class="swap-option-left">
+              <img class="swap-option-thumb" src="${this.escapeHtml(cand.thumbnailUrl || '')}" alt="${this.escapeHtml(cleanName)}" loading="lazy" onerror="${thumbFallback}">
+              <div class="swap-option-info">
+                <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <div class="swap-option-title">${this.escapeHtml(cleanName)}</div>
+                  <span class="plan-swap-badge">${this.escapeHtml(cand._swapSource)}</span>
+                </div>
+                <div class="swap-option-meta">
+                  <span>🎯 ${this.escapeHtml(cand.target || cand.muscle || 'Full Body')}</span>
+                  ${cand.equipment ? ` • <span>${this.escapeHtml(cand.equipment)}</span>` : ''}
+                </div>
+              </div>
+            </div>
+            <span class="swap-select-cta" style="font-size:0.78rem; font-weight:800; color:var(--brand-blue);">Use</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    backdrop.classList.add('active');
+  },
+
+  closePlanSwapSheet() {
+    const backdrop = document.getElementById('planSwapSheetBackdrop');
+    if (backdrop) backdrop.classList.remove('active');
+  },
+
+  selectPlanSwapExercise(newExId) {
+    if (!this.activeWorkout || !this.activeWorkout.isPlanWorkout) return;
+    const current = this.activeWorkout.exercises[this.activeExerciseIndex];
+    if (!current) return;
+
+    let cand = (typeof TrainingPlan !== 'undefined') ? TrainingPlan.lookup(newExId) : null;
+    if (!cand && typeof ExerciseDataset !== 'undefined' && Array.isArray(ExerciseDataset.allExercises)) {
+      cand = ExerciseDataset.allExercises.find(e => String(e.id) === String(newExId));
+    }
+    if (!cand) return;
+
+    const cleanName = typeof TrainingPlan !== 'undefined' ? TrainingPlan.cleanName(cand.name) : cand.name;
+    const replacement = {
+      ...cand,
+      name: cleanName,
+      planSlot: current.planSlot,
+      planLabel: current.planLabel,
+      planSets: current.planSets,
+      planReps: current.planReps,
+      planRest: current.planRest,
+      reps: current.planReps
+    };
+    delete replacement.loggedSets;
+
+    this.activeWorkout.exercises[this.activeExerciseIndex] = replacement;
+    this.stopRestTimer();
+    this.closePlanSwapSheet();
+    this.loadCurrentExercise();
   },
 
   startTimer() {
@@ -1673,6 +2469,8 @@ const HomeWorkoutApp = {
       if (this.activeWorkout && this.activeWorkout.isPlanWorkout) {
         this.timerSeconds++;
         this.updateTimerDisplay();
+        // Keep the saved copy's clock roughly up to date in case the page is closed
+        if (this.timerSeconds % 15 === 0) this.persistActiveWorkout();
         return;
       }
 
@@ -1706,12 +2504,14 @@ const HomeWorkoutApp = {
 
   prevExercise() {
     if (this.activeExerciseIndex > 0) {
+      this.stopRestTimer();
       this.activeExerciseIndex--;
       this.loadCurrentExercise();
     }
   },
 
   nextExercise() {
+    this.stopRestTimer();
     this.activeExerciseIndex++;
     if (this.activeExerciseIndex < this.activeWorkout.exercises.length) {
       this.loadCurrentExercise();
@@ -1721,17 +2521,75 @@ const HomeWorkoutApp = {
   },
 
   completeWorkoutSession() {
+    const isPlan = Boolean(this.activeWorkout && this.activeWorkout.isPlanWorkout);
+    if (isPlan) {
+      const anyDone = (this.activeWorkout.exercises || []).some(ex =>
+        Array.isArray(ex.loggedSets) && ex.loggedSets.some(s => s && s.done)
+      );
+      if (!anyDone && !confirm('No sets were ticked. Finish anyway?')) {
+        this.activeExerciseIndex = Math.max(0, (this.activeWorkout.exercises || []).length - 1);
+        this.loadCurrentExercise();
+        return;
+      }
+      // Normalize any numeric strings on loggedSets before saving
+      (this.activeWorkout.exercises || []).forEach(ex => {
+        if (!Array.isArray(ex.loggedSets) || ex.planSlot === 'cardio') return;
+        ex.loggedSets = ex.loggedSets.map(s => {
+          const w = (ex.equipment_tier === 'bodyweight' || s.weight === '' || s.weight == null)
+            ? null
+            : (isNaN(parseFloat(s.weight)) ? null : Math.round(parseFloat(s.weight) * 100) / 100);
+          const r = (s.reps === '' || s.reps == null) ? 0 : (parseInt(s.reps, 10) || 0);
+          return { weight: w, reps: r, done: Boolean(s.done) };
+        });
+      });
+    }
+
     if (this.timerInterval) clearInterval(this.timerInterval);
+    this.stopRestTimer();
+    this.releaseWakeLock();
 
     let result;
-    const isPlan = this.activeWorkout && this.activeWorkout.isPlanWorkout;
     const isDaily = this.activeWorkout && this.activeWorkout.isDailyMuscleRoutine;
     const isSingle = this.activeWorkout && this.activeWorkout.isSingleExercise;
 
     if (isPlan) {
-      const elapsedSeconds = (Date.now() - (this.workoutStartedAt || Date.now())) / 1000;
+      const elapsedSeconds = this.timerSeconds > 0
+        ? this.timerSeconds
+        : Math.max(0, Math.round((Date.now() - (this.workoutStartedAt || Date.now())) / 1000));
       result = HomeWorkoutStore.completePlanSession(this.activeWorkout, elapsedSeconds);
-    } else if (isDaily) {
+      HomeWorkoutStore.clearActiveWorkout();
+      const summary = this.computePlanResults(this.activeWorkout, elapsedSeconds, result && result.log ? result.log.id : null);
+
+      const modal = document.getElementById('workoutRunnerModal');
+      if (modal) {
+        modal.classList.remove('active');
+        modal.classList.remove('plan-mode');
+      }
+      this.closePlanSwapSheet();
+
+      this.renderHeader();
+      this.renderTodayCard();
+      this.renderWeeklyGoalCard();
+      this.renderChallengeCarousel();
+      this.renderBodyFocus({ forceRefresh: true });
+
+      const workoutTitle = result && result.log ? result.log.challengeTitle : (this.activeWorkout.title || 'WORKOUT');
+      if (typeof TelemetryTracker !== 'undefined' && this.activeWorkout) {
+        TelemetryTracker.trackWorkoutComplete(
+          this.activeWorkout.id,
+          workoutTitle,
+          result && result.log ? result.log.durationMinutes : 18,
+          result && result.log ? result.log.caloriesBurned : 145,
+          this.activeWorkout.exercises ? this.activeWorkout.exercises.length : 1
+        );
+      }
+
+      const next = result.plan ? TrainingPlan.buildSession(result.plan) : null;
+      this.showWorkoutResults(summary, next);
+      return;
+    }
+
+    if (isDaily) {
       const exerciseIds = this.activeWorkout.exercises.map(e => e.id);
       result = HomeWorkoutStore.logMuscleSessionCompleted(this.activeWorkout.muscle, exerciseIds, this.activeWorkout.exercises);
     } else if (isSingle && this.activeWorkout.exercises && this.activeWorkout.exercises.length > 0) {
@@ -1746,7 +2604,11 @@ const HomeWorkoutApp = {
     }
 
     const modal = document.getElementById('workoutRunnerModal');
-    if (modal) modal.classList.remove('active');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.classList.remove('plan-mode');
+    }
+    this.closePlanSwapSheet();
 
     // Refresh all UI states
     this.renderHeader();
@@ -1766,10 +2628,7 @@ const HomeWorkoutApp = {
       );
     }
 
-    if (isPlan) {
-      const next = result.plan ? TrainingPlan.buildSession(result.plan) : null;
-      alert(`🎉 WORKOUT COMPLETE!\n\n${workoutTitle}\n• Time: ${result.log.durationMinutes} min\n• Weekly goal: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget} days\n• Streak: ${result.user.streakCount} 🔥${next ? `\n\nNext up: Week ${next.week} · Day ${next.dayNumber}: ${next.name}` : ''}`);
-    } else if (isDaily) {
+    if (isDaily) {
       const mName = this.activeWorkout.muscle.toUpperCase();
       alert(`🎉 ${mName} ROUTINE COMPLETED!\n\nAwesome work! All 5 exercises finished.\n• Logged: ${workoutTitle}\n• Weekly Goal Progress: ${result.user.weeklyCompletedCount}/${result.user.weeklyGoalTarget}\n• Streak updated: ${result.user.streakCount} 🔥\n\n✨ Rotation Saved: Next time you do ${mName}, 5 fresh, unrepeated exercises will be recommended!`);
     } else {
@@ -1780,11 +2639,149 @@ const HomeWorkoutApp = {
     this.maybeShowSavePrompt();
   },
 
+  computePlanResults(workout, elapsedSeconds, excludeLogId) {
+    const exercises = (workout && workout.exercises) || [];
+    let exercisesDone = 0;
+    let setsDone = 0;
+    let totalSets = 0;
+    let totalVolume = 0;
+    const prs = [];
+
+    for (const ex of exercises) {
+      const logged = Array.isArray(ex.loggedSets) ? ex.loggedSets : [];
+      const doneSets = logged.filter(s => s && s.done);
+      if (doneSets.length > 0) exercisesDone++;
+
+      if (ex.planSlot === 'cardio') continue;
+
+      totalSets += logged.length;
+      setsDone += doneSets.length;
+
+      let best1RM = 0;
+      let bestSet = null;
+      for (const s of doneSets) {
+        const w = Number(s.weight);
+        const r = Number(s.reps);
+        if (w > 0 && r > 0) {
+          totalVolume += w * r;
+          const est = w * (1 + r / 30);
+          if (est > best1RM) {
+            best1RM = est;
+            bestSet = { weight: w, reps: r };
+          }
+        }
+      }
+
+      if (bestSet && best1RM > 0) {
+        const priorBest = HomeWorkoutStore.getExerciseBest1RM(ex.id, excludeLogId);
+        // A record means beating an earlier best; the first time an exercise is logged isn't one
+        if (priorBest > 0 && best1RM > priorBest) {
+          prs.push({
+            name: ex.name,
+            weight: bestSet.weight,
+            reps: bestSet.reps,
+            est1RM: Math.round(best1RM * 10) / 10
+          });
+        }
+      }
+    }
+
+    return {
+      title: (workout && workout.title) || 'Workout Complete',
+      timeFormatted: this.formatSeconds(elapsedSeconds),
+      exercisesDone,
+      totalExercises: exercises.length,
+      setsDone,
+      totalSets,
+      totalVolume: Math.round(totalVolume),
+      prs
+    };
+  },
+
+  showWorkoutResults(summary, nextSession) {
+    const backdrop = document.getElementById('workoutResultsBackdrop');
+    const content = document.getElementById('workoutResultsContent');
+    if (!backdrop || !content) {
+      this.maybeShowSavePrompt();
+      return;
+    }
+
+    const prsHtml = summary.prs.length > 0
+      ? `
+        <div class="results-pr-section">
+          <div class="results-pr-header">🏆 New Personal Records</div>
+          <div class="results-pr-list">
+            ${summary.prs.map(pr => `
+              <div class="results-pr-item">
+                <span>${this.escapeHtml(pr.name)}</span>
+                <span class="results-pr-detail">${pr.weight} kg × ${pr.reps} (1RM ~${pr.est1RM} kg)</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `
+      : '';
+
+    const nextHtml = nextSession
+      ? `<div class="results-next-box">Next up: Week ${nextSession.week} · Day ${nextSession.dayNumber}: ${this.escapeHtml(nextSession.name)}</div>`
+      : '';
+
+    content.innerHTML = `
+      <div class="results-hero">
+        <div class="results-trophy">🎉</div>
+        <div class="results-kicker">Workout Complete</div>
+        <h3 class="results-title" id="resultsTitle">${this.escapeHtml(summary.title)}</h3>
+      </div>
+
+      <div class="results-stats-grid">
+        <div class="results-stat-card">
+          <div class="results-stat-val" id="resStatTime">${this.escapeHtml(summary.timeFormatted)}</div>
+          <div class="results-stat-label">Total Time</div>
+        </div>
+        <div class="results-stat-card">
+          <div class="results-stat-val" id="resStatVolume">${summary.totalVolume.toLocaleString()} kg</div>
+          <div class="results-stat-label">Total Volume</div>
+        </div>
+        <div class="results-stat-card">
+          <div class="results-stat-val" id="resStatExercises">${summary.exercisesDone} of ${summary.totalExercises}</div>
+          <div class="results-stat-label">Exercises Done</div>
+        </div>
+        <div class="results-stat-card">
+          <div class="results-stat-val" id="resStatSets">${summary.setsDone} of ${summary.totalSets}</div>
+          <div class="results-stat-label">Sets Done</div>
+        </div>
+      </div>
+
+      ${prsHtml}
+      ${nextHtml}
+
+      <button type="button" class="start-day-pill-btn" id="resultsDoneBtn" style="background: var(--brand-blue); color: #FFFFFF;" onclick="HomeWorkoutApp.closeWorkoutResults()">
+        Done
+      </button>
+    `;
+
+    backdrop.classList.add('active');
+  },
+
+  closeWorkoutResults() {
+    const backdrop = document.getElementById('workoutResultsBackdrop');
+    if (backdrop) backdrop.classList.remove('active');
+    this.maybeShowSavePrompt();
+  },
+
   closeWorkoutRunner(fromPop = false) {
     if (fromPop || confirm('Quit current workout session?')) {
       if (this.timerInterval) clearInterval(this.timerInterval);
+      this.stopRestTimer();
+      this.releaseWakeLock();
+      this.closePlanSwapSheet();
+      // Quitting means "don't save this workout": nothing to resume later
+      HomeWorkoutStore.clearActiveWorkout();
       const modal = document.getElementById('workoutRunnerModal');
-      if (modal) modal.classList.remove('active');
+      if (modal) {
+        modal.classList.remove('active');
+        modal.classList.remove('plan-mode');
+      }
       if (!fromPop && typeof window !== 'undefined' && window.history) {
         if (window.history.state && window.history.state.modal === 'workoutRunnerModal') {
           window.history.back();
@@ -1990,6 +2987,20 @@ const HomeWorkoutApp = {
   },
 
   handlePopState(event) {
+    // 0. Sheets shown over the workout screen: Back just closes the sheet
+    const swapSheet = document.getElementById('planSwapSheetBackdrop');
+    if (swapSheet && swapSheet.classList.contains('active')) {
+      this.closePlanSwapSheet();
+      // Put the workout's history entry back so the next Back still asks before quitting
+      this.pushNavState({ modal: 'workoutRunnerModal' }, 'Workout Runner', '#runner');
+      return;
+    }
+    const resultsSheet = document.getElementById('workoutResultsBackdrop');
+    if (resultsSheet && resultsSheet.classList.contains('active')) {
+      this.closeWorkoutResults();
+      return;
+    }
+
     // 1. Check if workout runner modal is active
     const runnerModal = document.getElementById('workoutRunnerModal');
     if (runnerModal && runnerModal.classList.contains('active')) {
@@ -2018,7 +3029,8 @@ const HomeWorkoutApp = {
       'goalModalBackdrop',
       'proModalBackdrop',
       'swapExerciseModalBackdrop',
-      'saveProgressBackdrop'
+      'saveProgressBackdrop',
+      'resumeWorkoutBackdrop'
     ];
     for (const id of modalBackdrops) {
       const modal = document.getElementById(id);

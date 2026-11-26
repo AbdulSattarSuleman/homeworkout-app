@@ -4,7 +4,8 @@ const HomeWorkoutStore = {
     USER_PROGRESS: 'hw_user_progress',
     WORKOUT_LOGS: 'hw_workout_logs',
     CHALLENGES: 'hw_challenges',
-    AUTH_TOKEN: 'hw_auth_token'
+    AUTH_TOKEN: 'hw_auth_token',
+    ACTIVE_WORKOUT: 'hw_active_workout'
   },
 
   supabaseClient: null,
@@ -336,9 +337,19 @@ const HomeWorkoutStore = {
         l && l.completedAt && !l.cloudSynced && !this._inflightLogIds.has(String(l.id))
       );
       for (const log of pending) {
-        const blocks = (log.exercises || log.blocks || []).map(ex => ({
-          id: ex.id, name: ex.name, target: ex.target, sets: ex.sets || ex.planSets, reps: ex.reps || ex.planReps
-        }));
+        const blocks = (log.exercises || log.blocks || []).map(ex => {
+          const block = {
+            id: ex.id,
+            name: ex.name,
+            target: ex.target,
+            sets: ex.sets || ex.planSets,
+            reps: ex.reps || ex.planReps
+          };
+          if (Array.isArray(ex.loggedSets)) block.loggedSets = ex.loggedSets;
+          if (ex.equipment_tier) block.equipment_tier = ex.equipment_tier;
+          if (ex.planSlot) block.planSlot = ex.planSlot;
+          return block;
+        });
         const { data: row, error } = await client.from('workout_logs').insert({
           user_id: uid,
           title: log.challengeTitle || 'Workout Session',
@@ -643,6 +654,7 @@ const HomeWorkoutStore = {
       // Workout history is in the account; remove it from this device so the next
       // person using this phone doesn't see it (or get it added to their account)
       localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
+      localStorage.removeItem(this.KEYS.ACTIVE_WORKOUT);
     } catch (e) {}
     const user = JSON.parse(JSON.stringify(this.initialState.user));
     user.username = null;
@@ -1267,13 +1279,21 @@ const HomeWorkoutStore = {
       ? TrainingPlan.GOALS[plan.goal].kcalPerMin
       : 6;
 
-    const exercises = (workout.exercises || []).map(ex => ({
-      id: ex.id,
-      name: ex.name,
-      target: ex.target,
-      sets: ex.planSets,
-      reps: ex.planReps
-    }));
+    const exercises = (workout.exercises || []).map(ex => {
+      const entry = {
+        id: ex.id,
+        name: ex.name,
+        target: ex.target,
+        sets: ex.planSets,
+        reps: ex.planReps
+      };
+      if (Array.isArray(ex.loggedSets)) {
+        entry.loggedSets = ex.loggedSets.map(s => ({ ...s }));
+      }
+      if (ex.equipment_tier) entry.equipment_tier = ex.equipment_tier;
+      if (ex.planSlot) entry.planSlot = ex.planSlot;
+      return entry;
+    });
 
     const newLog = {
       id: 'log_' + Date.now(),
@@ -1313,6 +1333,99 @@ const HomeWorkoutStore = {
     });
 
     return { user: this.getUser(), log: newLog, plan };
+  },
+
+  // Scan saved logs newest-first (both log.exercises and log.blocks) and return the
+  // completed loggedSets from the most recent workout that recorded this exercise.
+  getLastPerformance(exerciseId) {
+    if (!exerciseId) return null;
+    const targetId = String(exerciseId);
+    const logs = this.getWorkoutLogs().slice().sort((a, b) => {
+      const ta = new Date((a && a.completedAt) || 0).getTime() || 0;
+      const tb = new Date((b && b.completedAt) || 0).getTime() || 0;
+      return tb - ta;
+    });
+
+    for (const log of logs) {
+      if (!log) continue;
+      const list = Array.isArray(log.exercises) && log.exercises.length > 0
+        ? log.exercises
+        : (Array.isArray(log.blocks) ? log.blocks : []);
+      for (const ex of list) {
+        if (!ex || String(ex.id) !== targetId) continue;
+        if (!Array.isArray(ex.loggedSets)) continue;
+        const doneSets = ex.loggedSets.filter(s => s && s.done);
+        if (doneSets.length > 0) {
+          return doneSets.map(s => ({ ...s }));
+        }
+      }
+    }
+    return null;
+  },
+
+  // Highest estimated 1-rep max (Epley: weight * (1 + reps / 30)) across prior logged workouts
+  getExerciseBest1RM(exerciseId, excludeLogId = null) {
+    if (!exerciseId) return 0;
+    const targetId = String(exerciseId);
+    const logs = this.getWorkoutLogs();
+    let best = 0;
+
+    for (const log of logs) {
+      if (!log) continue;
+      if (excludeLogId && (String(log.id) === String(excludeLogId) || (log.localId && String(log.localId) === String(excludeLogId)))) {
+        continue;
+      }
+      const list = Array.isArray(log.exercises) && log.exercises.length > 0
+        ? log.exercises
+        : (Array.isArray(log.blocks) ? log.blocks : []);
+      for (const ex of list) {
+        if (!ex || String(ex.id) !== targetId) continue;
+        if (ex.planSlot === 'cardio' || !Array.isArray(ex.loggedSets)) continue;
+        for (const s of ex.loggedSets) {
+          if (!s || !s.done) continue;
+          const w = Number(s.weight);
+          const r = Number(s.reps);
+          if (!(w > 0) || !(r > 0)) continue;
+          const est = w * (1 + r / 30);
+          if (est > best) best = est;
+        }
+      }
+    }
+    return best;
+  },
+
+  saveActiveWorkout(payload) {
+    try {
+      const data = { ...payload, savedAt: Date.now() };
+      localStorage.setItem(this.KEYS.ACTIVE_WORKOUT, JSON.stringify(data));
+    } catch (e) {}
+  },
+
+  getActiveWorkout() {
+    try {
+      const raw = localStorage.getItem(this.KEYS.ACTIVE_WORKOUT);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.activeWorkout || !parsed.activeWorkout.isPlanWorkout) {
+        this.clearActiveWorkout();
+        return null;
+      }
+      const ts = Number(parsed.savedAt || parsed.workoutStartedAt || 0);
+      const maxAgeMs = 12 * 60 * 60 * 1000;
+      if (!ts || Date.now() - ts >= maxAgeMs) {
+        this.clearActiveWorkout();
+        return null;
+      }
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  clearActiveWorkout() {
+    try {
+      localStorage.removeItem(this.KEYS.ACTIVE_WORKOUT);
+    } catch (e) {}
   },
 
   syncPlanToCloud(plan) {
@@ -1548,6 +1661,7 @@ const HomeWorkoutStore = {
 
     localStorage.removeItem(this.KEYS.USER_PROGRESS);
     localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
+    this.clearActiveWorkout();
     await this.deleteCloudLogs([], { all: true });
 
     if (this.getToken()) {
@@ -1907,15 +2021,27 @@ const HomeWorkoutStore = {
         return data;
       }
     }
-    const local = this.getWorkoutLogs();
-    return {
-      today: local.slice(0, 5),
-      yesterday: [],
-      this_week: [],
-      last_week: [],
-      older: [],
-      all_logs: local
-    };
+    // Group this device's workouts by date (newest first), so every workout appears
+    // under the right heading instead of only the latest 5 under "Today"
+    const local = this.getWorkoutLogs().slice().sort((a, b) =>
+      (new Date((b && b.completedAt) || 0).getTime() || 0) - (new Date((a && a.completedAt) || 0).getTime() || 0));
+    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const now = new Date();
+    const today = startOfDay(now);
+    const yesterday = today - 24 * 60 * 60 * 1000;
+    const thisWeek = this.getWeekStart(now).getTime();
+    const lastWeek = thisWeek - 7 * 24 * 60 * 60 * 1000;
+    const groups = { today: [], yesterday: [], this_week: [], last_week: [], older: [], all_logs: local };
+    local.forEach(log => {
+      const t = new Date(log && log.completedAt).getTime();
+      if (isNaN(t)) { groups.older.push(log); return; }
+      if (t >= today) groups.today.push(log);
+      else if (t >= yesterday) groups.yesterday.push(log);
+      else if (t >= thisWeek) groups.this_week.push(log);
+      else if (t >= lastWeek) groups.last_week.push(log);
+      else groups.older.push(log);
+    });
+    return groups;
   }
 };
 

@@ -15,7 +15,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=3.13">
+  <link rel="stylesheet" href="css/homeworkout.css?v=3.14">
 </head>
 <body>
 
@@ -288,12 +288,21 @@
 
       <h3 class="runner-ex-title" id="runnerExTitle">Jumping Jacks</h3>
       <p class="runner-ex-sub" id="runnerExSub">30s • Full Body Warmup</p>
+      <div class="runner-last-time" id="runnerLastTime" style="display: none;"></div>
+      <div class="runner-overload-hint" id="runnerOverloadHint" style="display: none;"></div>
       
       <!-- Muscle & Equipment Badges -->
       <div class="runner-tags-row" id="runnerTagsRow">
         <span class="runner-badge primary" id="runnerTargetBadge">Target: Full Body</span>
         <span class="runner-badge" id="runnerEquipBadge">No Equipment</span>
+        <button type="button" class="runner-swap-btn" id="runnerSwapBtn" style="display: none;" onclick="HomeWorkoutApp.openPlanSwapSheet()">🔁 Swap</button>
       </div>
+
+      <!-- Rest Countdown Banner (plan workouts, Feature 2) -->
+      <div class="runner-rest-banner" id="runnerRestBanner" style="display: none;"></div>
+
+      <!-- Per-Set Logger Rows (plan workouts, Feature 1) -->
+      <div class="runner-sets-area" id="runnerSetsArea" style="display: none;"></div>
 
       <!-- Step-by-Step Instructions Box -->
       <div class="runner-instructions-box" id="runnerInstructionsBox">
@@ -315,12 +324,44 @@
         </svg>
         <span>PAUSE</span>
       </button>
-      <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFFFFF; flex: 1.4; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.nextExercise()">
-        <span>NEXT</span>
+      <button class="start-day-pill-btn" id="runnerNextBtn" style="background: var(--brand-blue); color: #FFFFFF; flex: 1.4; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.nextExercise()">
+        <span id="runnerNextBtnLabel">NEXT</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
       </button>
+    </div>
+  </div>
+
+  <!-- SHEET: SWAP PLAN EXERCISE ("Machine busy?", Feature 4) -->
+  <div class="bottom-sheet-backdrop over-runner" id="planSwapSheetBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closePlanSwapSheet()">
+    <div class="bottom-sheet-box" style="max-height: 80vh; display: flex; flex-direction: column;" role="dialog" aria-modal="true" aria-labelledby="planSwapSheetTitle">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 class="sheet-title" style="margin: 0;" id="planSwapSheetTitle">Machine busy? Swap exercise</h3>
+        <button type="button" class="runner-close-btn" onclick="HomeWorkoutApp.closePlanSwapSheet()" style="font-size: 1.1rem; padding: 4px 8px;">✕</button>
+      </div>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 12px;" id="planSwapSheetSub">
+        Replaces this exercise for today's workout only, keeping your sets, reps and rest.
+      </p>
+      <div class="swap-options-list" id="planSwapOptionsList" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px;"></div>
+    </div>
+  </div>
+
+  <!-- SHEET: WORKOUT COMPLETE RESULTS SCREEN (plan workouts, Feature 5) -->
+  <div class="bottom-sheet-backdrop over-runner" id="workoutResultsBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeWorkoutResults()">
+    <div class="bottom-sheet-box results-sheet-box" role="dialog" aria-modal="true" aria-labelledby="resultsTitle">
+      <div id="workoutResultsContent"></div>
+    </div>
+  </div>
+
+  <!-- SHEET: RESUME A WORKOUT THAT WAS IN PROGRESS (after a reload / phone lock) -->
+  <div class="bottom-sheet-backdrop" id="resumeWorkoutBackdrop">
+    <div class="bottom-sheet-box save-progress-box" role="dialog" aria-modal="true" aria-labelledby="resumeWorkoutTitle">
+      <div class="save-progress-icon">⏯️</div>
+      <h3 class="sheet-title" id="resumeWorkoutTitle" style="text-align: center;">Resume your workout?</h3>
+      <p class="save-progress-text" id="resumeWorkoutText">You have a workout in progress.</p>
+      <button type="button" class="ob-primary-btn" style="margin-top: 4px;" onclick="HomeWorkoutApp.resumeSavedWorkout()">Resume workout</button>
+      <button type="button" class="save-progress-link muted" onclick="HomeWorkoutApp.discardSavedWorkout()">Discard it</button>
     </div>
   </div>
 
@@ -670,11 +711,11 @@
   </script>
 
   <!-- Application Logic Scripts -->
-  <script src="js/exercises.js?v=3.13"></script>
-  <script src="js/store.js?v=3.13"></script>
-  <script src="js/plan.js?v=3.13"></script>
-  <script src="js/visuals.js?v=3.13"></script>
-  <script src="js/telemetry.js?v=3.13"></script>
-  <script src="js/homeworkout.js?v=3.13"></script>
+  <script src="js/exercises.js?v=3.14"></script>
+  <script src="js/store.js?v=3.14"></script>
+  <script src="js/plan.js?v=3.14"></script>
+  <script src="js/visuals.js?v=3.14"></script>
+  <script src="js/telemetry.js?v=3.14"></script>
+  <script src="js/homeworkout.js?v=3.14"></script>
 </body>
 </html>
