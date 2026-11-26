@@ -65,6 +65,7 @@
 
   <h1>🧪 Automated Auth Verification Suite</h1>
   <p>Verifies Priority 0 Auth Requirements: Registration, Login, Validations, Duplicate User, Hashing, Guest Mode & Session Persistence.</p>
+  <p style="color: #FBBF24;">⚠️ Kept outside <code>web/</code> so it is not published to GitHub Pages. It talks to the LIVE Supabase project, and several tests are out of date (they call <code>register(username, password)</code> but the function is now <code>register(username, email, password)</code>). Update them before relying on the results.</p>
 
   <button onclick="runAllTests()">▶ Run Test Suite</button>
 
@@ -282,7 +283,7 @@
       }
     }
 
-    // Render list on load (user clicks button to run)
+    // Tests run only when the button is clicked (they sign in/out against the live project)
     window.addEventListener('DOMContentLoaded', () => {
       renderTestList();
     });

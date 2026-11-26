@@ -1,17 +1,60 @@
 import os
 import sqlite3
 import hashlib
+import hmac
+import secrets
 import uuid
 import json
-import hmac
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Header, HTTPException, Depends, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 DB_PATH = "homeworkout.db"
+
+# Login sessions expire after this long
+USER_SESSION_MAX_AGE = "-30 days"
+ADMIN_SESSION_MAX_AGE = "-12 hours"
+
+# Largest telemetry "details" payload accepted (characters of JSON)
+MAX_TELEMETRY_DETAILS_CHARS = 4000
+
+ALLOWED_FITNESS_LEVELS = {"Beginner", "Intermediate", "Advanced"}
+
+# ========================================================
+# PASSWORD HASHING (salted PBKDF2; old unsalted SHA-256 hashes still verify and get upgraded)
+# ========================================================
+PBKDF2_ITERATIONS = 260_000
+_LEGACY_DEFAULT_ADMIN_HASH = hashlib.sha256(b"admin123").hexdigest()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), PBKDF2_ITERATIONS).hex()
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${digest}"
+
+
+def verify_password(password: str, stored_hash: Optional[str]) -> bool:
+    stored_hash = stored_hash or ""
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        try:
+            _, iterations, salt, digest = stored_hash.split("$", 3)
+            check = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), int(iterations)).hex()
+        except ValueError:
+            return False
+        return hmac.compare_digest(check, digest)
+    legacy = hashlib.sha256(password.encode()).hexdigest()
+    return hmac.compare_digest(legacy, stored_hash)
+
+
+def needs_rehash(stored_hash: Optional[str]) -> bool:
+    return not (stored_hash or "").startswith("pbkdf2_sha256$")
+
+
+def new_session_token() -> str:
+    return secrets.token_urlsafe(32)
 
 # ========================================================
 # DATABASE INITIALIZATION
@@ -20,18 +63,6 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
-def hash_password(password: str, salt: Optional[str] = None) -> str:
-    if not salt:
-        salt = "hw_fitness_salt_2026"
-    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
-
-def verify_password(plain_password: str, stored_hash: str) -> bool:
-    hashed = hash_password(plain_password)
-    if hmac.compare_digest(hashed, stored_hash):
-        return True
-    legacy = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
-    return hmac.compare_digest(legacy, stored_hash)
 
 def init_db():
     conn = get_db()
@@ -138,29 +169,42 @@ def init_db():
 
     conn.commit()
 
-    # Seed demo user if not exists
-    cur.execute("SELECT id FROM users WHERE username = ?", ("athlete",))
-    if not cur.fetchone():
-        pwd_hash = hash_password("workout123")
-        cur.execute("""
-            INSERT INTO users (username, password_hash, fitness_level, is_pro, streak_count, weekly_goal_target, weekly_completed_count, is_admin)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-        """, ("athlete", pwd_hash, "Intermediate", 1, 3, 5, 2))
-        conn.commit()
+    # Optional demo user (only when HW_SEED_DEMO=1)
+    if os.environ.get("HW_SEED_DEMO") == "1":
+        cur.execute("SELECT id FROM users WHERE username = ?", ("athlete",))
+        if not cur.fetchone():
+            cur.execute("""
+                INSERT INTO users (username, password_hash, fitness_level, is_pro, streak_count, weekly_goal_target, weekly_completed_count, is_admin)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            """, ("athlete", hash_password("workout123"), "Intermediate", 1, 3, 5, 2))
+            conn.commit()
 
-    # Seed or configure admin user
-    admin_default_pass = os.environ.get("ADMIN_DEFAULT_PASSWORD", "AdminSecure2026!")
-    admin_pwd = hash_password(admin_default_pass)
-    cur.execute("SELECT id FROM users WHERE username = ?", ("admin",))
+    # Admin account: password comes from HW_ADMIN_PASSWORD, or a random one is generated
+    # and printed once. The old built-in "admin123" password is replaced automatically.
+    env_admin_password = os.environ.get("HW_ADMIN_PASSWORD")
+    cur.execute("SELECT id, password_hash FROM users WHERE username = ?", ("admin",))
     row = cur.fetchone()
     if not row:
+        admin_password = env_admin_password or secrets.token_urlsafe(12)
         cur.execute("""
             INSERT INTO users (username, password_hash, fitness_level, is_pro, streak_count, weekly_goal_target, weekly_completed_count, is_admin)
-            VALUES (?, ?, 'Advanced', 1, 7, 7, 7, 1)
-        """, ("admin", admin_pwd))
+            VALUES (?, ?, 'Advanced', 1, 0, 7, 0, 1)
+        """, ("admin", hash_password(admin_password)))
         conn.commit()
+        if not env_admin_password:
+            print(f"[setup] Created admin account 'admin' with password: {admin_password}")
+            print("[setup] Save it now, or set HW_ADMIN_PASSWORD before starting the server to choose your own.")
     else:
-        cur.execute("UPDATE users SET is_admin = 1 WHERE username = ?", ("admin",))
+        cur.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (row["id"],))
+        uses_old_default = row["password_hash"] == _LEGACY_DEFAULT_ADMIN_HASH
+        env_mismatch = bool(env_admin_password) and not verify_password(env_admin_password, row["password_hash"])
+        if uses_old_default or env_mismatch:
+            admin_password = env_admin_password or secrets.token_urlsafe(12)
+            cur.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(admin_password), row["id"]))
+            cur.execute("DELETE FROM user_sessions WHERE user_id = ?", (row["id"],))
+            if not env_admin_password:
+                print(f"[setup] Replaced the old default admin password. New password for 'admin': {admin_password}")
+                print("[setup] Save it now, or set HW_ADMIN_PASSWORD before starting the server to choose your own.")
         conn.commit()
 
     conn.close()
@@ -175,7 +219,7 @@ app = FastAPI(title="Home Workout Backend & Sync API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # auth uses Bearer tokens, not cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -183,28 +227,50 @@ app.add_middleware(
 # ========================================================
 # AUTH HELPERS & DEPENDENCIES
 # ========================================================
-
-def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+def _bearer_token(authorization: Optional[str]) -> Optional[str]:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authentication token")
-    
-    token = authorization.split(" ")[1]
+        return None
+    parts = authorization.split(" ", 1)
+    token = parts[1].strip() if len(parts) == 2 else ""
+    return token or None
+
+
+def lookup_session_user(token: Optional[str], admin_only: bool = False) -> Optional[dict]:
+    """Returns the user for a non-expired session token, or None."""
+    if not token:
+        return None
+    max_age = ADMIN_SESSION_MAX_AGE if admin_only else USER_SESSION_MAX_AGE
     conn = get_db()
     cur = conn.cursor()
-    # Expire user sessions after 30 days
-    expiry_limit = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-    cur.execute("""
+    cur.execute(f"""
         SELECT u.* FROM users u
         JOIN user_sessions s ON u.id = s.user_id
-        WHERE s.token = ? AND s.created_at >= ?
-    """, (token, expiry_limit))
+        WHERE s.token = ? AND s.created_at >= datetime('now', ?)
+        {"AND u.is_admin = 1" if admin_only else ""}
+    """, (token, max_age))
     row = cur.fetchone()
     conn.close()
+    return dict(row) if row else None
 
-    if not row:
+
+def count_workout_days_this_week(cur, user_id: int) -> int:
+    today = datetime.now().date()
+    week_start = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+    cur.execute(
+        "SELECT COUNT(DISTINCT date_str) AS c FROM workout_logs WHERE user_id = ? AND date_str >= ?",
+        (user_id, week_start),
+    )
+    return cur.fetchone()["c"]
+
+
+def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    token = _bearer_token(authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing or invalid authentication token")
+    user = lookup_session_user(token)
+    if not user:
         raise HTTPException(status_code=401, detail="Session expired or invalid")
-    
-    return dict(row)
+    return user
 
 def extract_client_info(request: Request) -> tuple:
     cf_ip = request.headers.get("cf-connecting-ip")
@@ -220,51 +286,28 @@ def extract_client_info(request: Request) -> tuple:
     return ip, ua
 
 def get_optional_user(authorization: Optional[str] = Header(None)) -> Optional[dict]:
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    token = authorization.split(" ")[1]
-    conn = get_db()
-    cur = conn.cursor()
-    expiry_limit = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-    cur.execute("""
-        SELECT u.* FROM users u
-        JOIN user_sessions s ON u.id = s.user_id
-        WHERE s.token = ? AND s.created_at >= ?
-    """, (token, expiry_limit))
-    row = cur.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return lookup_session_user(_bearer_token(authorization))
 
 def get_admin_user(authorization: Optional[str] = Header(None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
+    token = _bearer_token(authorization)
+    if not token:
         raise HTTPException(status_code=401, detail="Admin authorization token required")
-    token = authorization.split(" ")[1]
-    conn = get_db()
-    cur = conn.cursor()
-    # Admin sessions expire after 7 days
-    expiry_limit = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-    cur.execute("""
-        SELECT u.* FROM users u
-        JOIN user_sessions s ON u.id = s.user_id
-        WHERE s.token = ? AND u.is_admin = 1 AND s.created_at >= ?
-    """, (token, expiry_limit))
-    row = cur.fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=403, detail="Access denied. Admin privileges required or session expired.")
-    return dict(row)
+    admin = lookup_session_user(token, admin_only=True)
+    if not admin:
+        raise HTTPException(status_code=403, detail="Access denied. Admin privileges required.")
+    return admin
 
 # ========================================================
 # REQUEST / RESPONSE MODELS
 # ========================================================
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., max_length=40)
+    password: str = Field(..., max_length=200)
     fitness_level: Optional[str] = "Intermediate"
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., max_length=40)
+    password: str = Field(..., max_length=200)
 
 class UpdateGoalRequest(BaseModel):
     target: int
@@ -285,29 +328,29 @@ class DeleteSelectedLogsRequest(BaseModel):
     log_ids: List[str]
 
 class TelemetryEventRequest(BaseModel):
-    session_id: str
-    event_type: str
-    event_category: Optional[str] = "general"
+    session_id: str = Field(..., max_length=64)
+    event_type: str = Field(..., max_length=64)
+    event_category: Optional[str] = Field("general", max_length=32)
     event_details: Optional[Dict[str, Any]] = {}
-    screen_width: Optional[int] = 0
-    screen_height: Optional[int] = 0
-    viewport_width: Optional[int] = 0
-    viewport_height: Optional[int] = 0
-    device_type: Optional[str] = "Unknown"
+    screen_width: Optional[int] = Field(0, ge=0, le=20000)
+    screen_height: Optional[int] = Field(0, ge=0, le=20000)
+    viewport_width: Optional[int] = Field(0, ge=0, le=20000)
+    viewport_height: Optional[int] = Field(0, ge=0, le=20000)
+    device_type: Optional[str] = Field("Unknown", max_length=64)
 
 class TelemetryHeartbeatRequest(BaseModel):
-    session_id: str
+    session_id: str = Field(..., max_length=64)
     elapsed_seconds: Optional[int] = 15
-    current_screen: Optional[str] = "dashboard"
-    screen_width: Optional[int] = 0
-    screen_height: Optional[int] = 0
-    viewport_width: Optional[int] = 0
-    viewport_height: Optional[int] = 0
-    device_type: Optional[str] = "Unknown"
+    current_screen: Optional[str] = Field("dashboard", max_length=64)
+    screen_width: Optional[int] = Field(0, ge=0, le=20000)
+    screen_height: Optional[int] = Field(0, ge=0, le=20000)
+    viewport_width: Optional[int] = Field(0, ge=0, le=20000)
+    viewport_height: Optional[int] = Field(0, ge=0, le=20000)
+    device_type: Optional[str] = Field("Unknown", max_length=64)
 
 class AdminLoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., max_length=40)
+    password: str = Field(..., max_length=200)
 
 # ========================================================
 # AUTHENTICATION API ENDPOINTS
@@ -315,8 +358,11 @@ class AdminLoginRequest(BaseModel):
 @app.post("/api/auth/register")
 def register(req: RegisterRequest):
     username = req.username.strip()
-    if len(username) < 3 or len(req.password) < 4:
-        raise HTTPException(status_code=400, detail="Username must be at least 3 chars and password at least 4 chars")
+    if len(username) < 3 or len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 chars and password at least 8 chars")
+    fitness_level = req.fitness_level or "Intermediate"
+    if fitness_level not in ALLOWED_FITNESS_LEVELS:
+        raise HTTPException(status_code=400, detail="Invalid fitness level")
 
     conn = get_db()
     cur = conn.cursor()
@@ -329,10 +375,10 @@ def register(req: RegisterRequest):
     cur.execute("""
         INSERT INTO users (username, password_hash, fitness_level, weekly_goal_target, weekly_completed_count, streak_count)
         VALUES (?, ?, ?, 5, 0, 0)
-    """, (username, pwd_hash, req.fitness_level))
+    """, (username, pwd_hash, fitness_level))
     user_id = cur.lastrowid
 
-    token = str(uuid.uuid4())
+    token = new_session_token()
     cur.execute("INSERT INTO user_sessions (token, user_id) VALUES (?, ?)", (token, user_id))
     conn.commit()
 
@@ -343,21 +389,31 @@ def register(req: RegisterRequest):
 
     return {"token": token, "user": user}
 
+def _authenticate(cur, username: str, password: str, admin_only: bool = False) -> Optional[dict]:
+    """Checks a username/password; upgrades old SHA-256 hashes on success."""
+    query = "SELECT * FROM users WHERE LOWER(username) = LOWER(?)"
+    if admin_only:
+        query += " AND is_admin = 1"
+    cur.execute(query, (username.strip(),))
+    row = cur.fetchone()
+    if not row or not verify_password(password, row["password_hash"]):
+        return None
+    user = dict(row)
+    if needs_rehash(user["password_hash"]):
+        cur.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(password), user["id"]))
+    return user
+
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
-    username = req.username.strip()
     conn = get_db()
     cur = conn.cursor()
+    user = _authenticate(cur, req.username, req.password)
 
-    cur.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?)", (username,))
-    user_row = cur.fetchone()
-
-    if not user_row or not verify_password(req.password, user_row["password_hash"]):
+    if not user:
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    user = dict(user_row)
-    token = str(uuid.uuid4())
+    token = new_session_token()
     cur.execute("INSERT INTO user_sessions (token, user_id) VALUES (?, ?)", (token, user["id"]))
     conn.commit()
     conn.close()
@@ -375,10 +431,10 @@ def guest_login():
     cur.execute("""
         INSERT INTO users (username, password_hash, fitness_level, weekly_goal_target, weekly_completed_count, streak_count)
         VALUES (?, ?, 'Intermediate', 5, 0, 1)
-    """, (guest_username, hash_password("guest123")))
+    """, (guest_username, hash_password(secrets.token_urlsafe(24))))
     user_id = cur.lastrowid
 
-    token = str(uuid.uuid4())
+    token = new_session_token()
     cur.execute("INSERT INTO user_sessions (token, user_id) VALUES (?, ?)", (token, user_id))
     conn.commit()
 
@@ -396,8 +452,8 @@ def get_me(user: dict = Depends(get_current_user)):
 
 @app.post("/api/auth/logout")
 def logout(authorization: Optional[str] = Header(None)):
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
+    token = _bearer_token(authorization)
+    if token:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("DELETE FROM user_sessions WHERE token = ?", (token,))
@@ -422,6 +478,8 @@ def update_goal(req: UpdateGoalRequest, user: dict = Depends(get_current_user)):
 
 @app.patch("/api/user/level")
 def update_level(req: UpdateLevelRequest, user: dict = Depends(get_current_user)):
+    if req.level not in ALLOWED_FITNESS_LEVELS:
+        raise HTTPException(status_code=400, detail="Invalid fitness level")
     conn = get_db()
     cur = conn.cursor()
     cur.execute("UPDATE users SET fitness_level = ? WHERE id = ?", (req.level, user["id"]))
@@ -431,18 +489,8 @@ def update_level(req: UpdateLevelRequest, user: dict = Depends(get_current_user)
     user.pop("password_hash", None)
     return {"user": user}
 
-@app.post("/api/user/toggle-pro")
-def toggle_pro(user: dict = Depends(get_admin_user)):
-    """Restricted to administrators only"""
-    new_pro = 0 if user.get("is_pro") else 1
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET is_pro = ? WHERE id = ?", (new_pro, user["id"]))
-    conn.commit()
-    user["is_pro"] = new_pro
-    conn.close()
-    user.pop("password_hash", None)
-    return {"user": user}
+# Note: the old /api/user/toggle-pro endpoint was removed. It let any user give
+# themselves Pro, and the web app never called it.
 
 # ========================================================
 # WORKOUT LOGS & SMART ROTATION PERSISTENCE
@@ -471,15 +519,6 @@ def complete_workout(req: WorkoutCompleteRequest, user: dict = Depends(get_curre
         else:
             new_streak = 1
 
-    new_weekly_count = user.get("weekly_completed_count", 0) + 1
-
-    # Update user progress
-    cur.execute("""
-        UPDATE users 
-        SET streak_count = ?, weekly_completed_count = ?, last_workout_date = ?
-        WHERE id = ?
-    """, (new_streak, new_weekly_count, today_str, user["id"]))
-
     # Save to workout_logs
     exercises_json = json.dumps(req.exercises or [])
     cur.execute("""
@@ -494,6 +533,14 @@ def complete_workout(req: WorkoutCompleteRequest, user: dict = Depends(get_curre
             INSERT INTO muscle_rotation_history (user_id, muscle, exercise_ids_json, session_date, date_str)
             VALUES (?, ?, ?, ?, ?)
         """, (user["id"], req.muscle_group.lower(), json.dumps(exercise_ids), now.isoformat(), today_str))
+
+    # Update user progress (weekly goal = days with a workout since Monday)
+    new_weekly_count = count_workout_days_this_week(cur, user["id"])
+    cur.execute("""
+        UPDATE users
+        SET streak_count = ?, weekly_completed_count = ?, last_workout_date = ?
+        WHERE id = ?
+    """, (new_streak, new_weekly_count, today_str, user["id"]))
 
     conn.commit()
 
@@ -626,10 +673,11 @@ def delete_selected_workout_history(req: DeleteSelectedLogsRequest, user: dict =
     cur.execute(f"DELETE FROM workout_logs WHERE id IN ({placeholders}) AND user_id = ?", tuple(params))
     deleted_count = cur.rowcount
 
-    # Recalculate remaining workouts count for user
+    # Recalculate remaining workouts and this week's goal progress
     cur.execute("SELECT COUNT(*) as c FROM workout_logs WHERE user_id = ?", (user["id"],))
     remaining_count = cur.fetchone()["c"]
-    cur.execute("UPDATE users SET weekly_completed_count = ? WHERE id = ?", (remaining_count, user["id"]))
+    weekly_count = count_workout_days_this_week(cur, user["id"])
+    cur.execute("UPDATE users SET weekly_completed_count = ? WHERE id = ?", (weekly_count, user["id"]))
     conn.commit()
     conn.close()
 
@@ -671,11 +719,10 @@ def record_telemetry_event(
 
     screen_res = f"{req.screen_width}x{req.screen_height}" if (req.screen_width and req.screen_height) else None
     viewport_sz = f"{req.viewport_width}x{req.viewport_height}" if (req.viewport_width and req.viewport_height) else None
-    details_str = json.dumps(req.event_details or {})[:2048]
-    ev_type = (req.event_type or "unknown")[:64]
-    ev_cat = (req.event_category or "general")[:64]
-    sess_id = (req.session_id or "anon")[:64]
-    dev_type = (req.device_type or "Unknown")[:64]
+    details_str = json.dumps(req.event_details or {})
+    if len(details_str) > MAX_TELEMETRY_DETAILS_CHARS:
+        raise HTTPException(status_code=413, detail="Telemetry details too large")
+    user_agent = (user_agent or "")[:300]
 
     conn = get_db()
     cur = conn.cursor()
@@ -687,9 +734,9 @@ def record_telemetry_event(
          screen_width, screen_height, viewport_width, viewport_height, device_type, user_agent, ip_address)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        user_id, username, sess_id, ev_type, ev_cat, details_str,
+        user_id, username, req.session_id, req.event_type, req.event_category, details_str,
         req.screen_width or 0, req.screen_height or 0, req.viewport_width or 0, req.viewport_height or 0,
-        dev_type, user_agent[:255], ip_addr[:64]
+        req.device_type or "Unknown", user_agent, ip_addr
     ))
 
     # 2. Upsert into session_telemetry
@@ -731,6 +778,7 @@ def record_telemetry_heartbeat(
     screen_res = f"{req.screen_width}x{req.screen_height}" if (req.screen_width and req.screen_height) else None
     viewport_sz = f"{req.viewport_width}x{req.viewport_height}" if (req.viewport_width and req.viewport_height) else None
     elapsed = max(1, min(120, req.elapsed_seconds or 15))
+    user_agent = (user_agent or "")[:300]
 
     conn = get_db()
     cur = conn.cursor()
@@ -761,16 +809,13 @@ def admin_login(req: AdminLoginRequest):
     """Admin-only authentication gate"""
     conn = get_db()
     cur = conn.cursor()
-    pwd_hash = hash_password(req.password)
-    cur.execute("SELECT * FROM users WHERE LOWER(username) = LOWER(?) AND password_hash = ? AND is_admin = 1", (req.username.strip(), pwd_hash))
-    user_row = cur.fetchone()
+    user = _authenticate(cur, req.username, req.password, admin_only=True)
 
-    if not user_row:
+    if not user:
         conn.close()
         raise HTTPException(status_code=403, detail="Invalid admin credentials or not authorized as admin")
 
-    user = dict(user_row)
-    token = str(uuid.uuid4())
+    token = new_session_token()
     cur.execute("INSERT INTO user_sessions (token, user_id) VALUES (?, ?)", (token, user["id"]))
     conn.commit()
     conn.close()
@@ -913,10 +958,13 @@ def get_admin_users(admin: dict = Depends(get_admin_user)):
     conn = get_db()
     cur = conn.cursor()
 
+    today = datetime.now().date()
+    week_start = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
     cur.execute("""
-        SELECT 
+        SELECT
             u.id, u.username, u.fitness_level, u.is_pro, u.is_admin,
-            u.streak_count, u.weekly_goal_target, u.weekly_completed_count,
+            u.streak_count, u.weekly_goal_target,
+            (SELECT COUNT(DISTINCT w.date_str) FROM workout_logs w WHERE w.user_id = u.id AND w.date_str >= ?) as weekly_completed_count,
             u.last_workout_date, u.created_at,
             (SELECT COUNT(*) FROM workout_logs w WHERE w.user_id = u.id) as workout_count,
             (SELECT COALESCE(SUM(s.active_screen_seconds), 0) FROM session_telemetry s WHERE s.user_id = u.id) as total_screen_time_seconds,
@@ -926,7 +974,7 @@ def get_admin_users(admin: dict = Depends(get_admin_user)):
             (SELECT a.created_at FROM activity_events a WHERE a.user_id = u.id ORDER BY a.id DESC LIMIT 1) as last_activity_at
         FROM users u
         ORDER BY u.id DESC
-    """)
+    """, (week_start,))
     rows = cur.fetchall()
     conn.close()
 
@@ -1000,4 +1048,6 @@ app.mount("/", StaticFiles(directory="web", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8080, reload=False)
+    # Listens only on this computer by default (a cloudflared tunnel to localhost still works).
+    # Set HW_HOST=0.0.0.0 to allow other devices on your network to connect.
+    uvicorn.run("server:app", host=os.environ.get("HW_HOST", "127.0.0.1"), port=8080, reload=False)
