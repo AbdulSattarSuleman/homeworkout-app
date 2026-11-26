@@ -245,7 +245,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0 6px;
-  margin-bottom: 8px;
+  margin-bottom: 16px; /* 8px gap + 8px for the pointer under today */
   position: relative;
 }
 
@@ -253,8 +253,40 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 2px;
   width: 38px;
-  cursor: pointer;
+  position: relative;
+}
+
+.date-day {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--text-light);
+}
+
+.date-col.today .date-day {
+  color: var(--brand-blue);
+}
+
+.date-col.future .date-num {
+  color: var(--text-light);
+}
+
+/* Trained today: filled circle plus the "today" ring */
+.date-col.today.completed .date-num {
+  box-shadow: 0 0 0 3px var(--brand-blue-ring);
+}
+
+/* Small pointer under today, joining the coach message below */
+.date-col.today::after {
+  content: '';
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid var(--surface-subtle);
 }
 
 .date-num {

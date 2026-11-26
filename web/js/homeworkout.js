@@ -108,8 +108,8 @@ const HomeWorkoutApp = {
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
         const query = e.target.value;
+        this.searchExercises(query);
         if (query.trim().length > 0) {
-          this.openDirectory('All', query);
           clearTimeout(searchDebounce);
           searchDebounce = setTimeout(() => {
             if (typeof TelemetryTracker !== 'undefined' && query.trim().length >= 2) {
@@ -196,6 +196,20 @@ const HomeWorkoutApp = {
     });
   },
 
+  // The search bar at the top searches the exercise library
+  searchExercises(query) {
+    const q = (query || '').trim();
+    this.explorerSearch = q;
+    const expSearch = document.getElementById('explorerSearchInput');
+    if (expSearch) expSearch.value = q;
+    if (!q && this.currentScreen !== 'directory') return; // cleared on another screen: nothing to do
+    if (this.currentScreen === 'directory') {
+      this.renderExplorer();
+    } else {
+      this.openExerciseExplorer();
+    }
+  },
+
   renderHeader() {
     const user = HomeWorkoutStore.getUser();
     const token = HomeWorkoutStore.getToken();
@@ -229,18 +243,51 @@ const HomeWorkoutApp = {
     if (countEl) countEl.textContent = (typeof user.weeklyCompletedCount === 'number' && !isNaN(user.weeklyCompletedCount)) ? user.weeklyCompletedCount : 0;
     if (targetEl) targetEl.textContent = `/${user.weeklyGoalTarget || 5}`;
 
-    // 7-Day Date Strip
+    // This week's real dates (Monday to Sunday): filled = trained that day, ring = today
     const dateStrip = document.getElementById('wgDateStrip');
+    const dayKey = d => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const trainedDays = new Set(
+      HomeWorkoutStore.getWorkoutLogs()
+        .map(l => new Date(l && l.completedAt))
+        .filter(d => !isNaN(d.getTime()))
+        .map(dayKey)
+    );
+    const today = new Date();
+    const weekStart = HomeWorkoutStore.getWeekStart(today);
+    const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     if (dateStrip) {
-      dateStrip.innerHTML = user.activeWeekDays.map(dayNum => {
-        const isActive = dayNum === user.currentDaySelected;
-        const isCompleted = dayNum < user.currentDaySelected || (isActive && user.weeklyCompletedCount > 0);
+      dateStrip.innerHTML = letters.map((letter, i) => {
+        const d = new Date(weekStart);
+        d.setDate(weekStart.getDate() + i);
+        const isToday = dayKey(d) === dayKey(today);
+        const trained = trainedDays.has(dayKey(d));
+        const isFuture = !isToday && d > today;
+        const label = `${d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}${trained ? ', trained' : ''}${isToday ? ' (today)' : ''}`;
         return `
-          <div class="date-col ${isActive ? 'active' : ''} ${isCompleted && !isActive ? 'completed' : ''}" onclick="HomeWorkoutApp.selectDay(${dayNum})">
-            <span class="date-num">${dayNum}</span>
+          <div class="date-col ${isToday ? 'active today' : ''} ${trained ? 'completed' : ''} ${isFuture ? 'future' : ''}" title="${label}" aria-label="${label}">
+            <span class="date-day">${letter}</span>
+            <span class="date-num">${d.getDate()}</span>
           </div>
         `;
       }).join('');
+    }
+
+    // Coach message that follows the week's progress
+    const quote = document.getElementById('coachQuoteText');
+    if (quote) {
+      const done = user.weeklyCompletedCount || 0;
+      const target = user.weeklyGoalTarget || 5;
+      const trainedToday = trainedDays.has(dayKey(today));
+      const left = Math.max(0, target - done);
+      if (done >= target) {
+        quote.textContent = `Weekly goal reached! 🎉 ${done} training days this week. Amazing consistency.`;
+      } else if (trainedToday) {
+        quote.textContent = `Great work today! 💪 ${left} more day${left === 1 ? '' : 's'} to hit your goal this week.`;
+      } else if (done > 0) {
+        quote.textContent = `${done} of ${target} days done. Let's keep the streak going today!`;
+      } else {
+        quote.textContent = 'Your workout awaits you! Time to make the first step!';
+      }
     }
 
     // Coach Avatar
@@ -1044,6 +1091,9 @@ const HomeWorkoutApp = {
   // SCREEN NAVIGATION: CHALLENGE & EXERCISE LIBRARY DIRECTORY
   // ========================================================
   switchDirectoryMode(mode) {
+    // The old multi-day "Challenges" list was replaced by the goal-based plan:
+    // this screen is now always the exercise library.
+    mode = 'library';
     this.directoryMode = mode;
     const tabCh = document.getElementById('tabChallengesBtn');
     const tabLib = document.getElementById('tabLibraryBtn');
@@ -1063,7 +1113,7 @@ const HomeWorkoutApp = {
     } else {
       if (chContainer) chContainer.style.display = 'none';
       if (libContainer) libContainer.style.display = 'block';
-      if (titleEl) titleEl.textContent = '1,324 Exercise Library';
+      if (titleEl) titleEl.textContent = 'Exercises';
       // Sync search query if user typed into top dashboard search bar
       const topSearch = document.getElementById('hwSearchInput');
       const expSearch = document.getElementById('explorerSearchInput');
@@ -1076,32 +1126,12 @@ const HomeWorkoutApp = {
   },
 
   openDirectory(category = 'All', searchQuery = '') {
-    this.currentScreen = 'directory';
-    this.currentTab = 'discover';
-    this.activeChallengeFilter = category;
-
-    if (typeof TelemetryTracker !== 'undefined') {
-      TelemetryTracker.trackScreen('challenges_directory', category || 'All');
+    // Old entry point to the removed Challenges list: send people to the exercise library
+    if (searchQuery) {
+      this.searchExercises(searchQuery);
+    } else {
+      this.openExerciseExplorer();
     }
-
-    // Update bottom nav active state
-    document.querySelectorAll('.hw-nav-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.getAttribute('data-tab') === 'discover');
-    });
-
-    ['dashboardScreen', 'directoryScreen', 'reportScreen', 'settingsScreen'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.classList.remove('active');
-    });
-    const dirView = document.getElementById('directoryScreen');
-    if (dirView) dirView.classList.add('active');
-
-    this.switchDirectoryMode('challenges');
-    this.renderDirectoryFilters();
-    this.renderDirectoryCards(searchQuery);
-
-    const scrollContainer = document.querySelector('.hw-main-scroll');
-    if (scrollContainer) scrollContainer.scrollTop = 0;
   },
 
   openExerciseExplorer(muscle = 'All', location = 'All') {
@@ -1214,7 +1244,7 @@ const HomeWorkoutApp = {
       } else {
         const muscles = [
           { id: 'All', name: 'All Muscles' },
-          { id: 'Chest', name: '🫁 Chest' },
+          { id: 'Chest', name: '🏋️ Chest' },
           { id: 'Back', name: '🧗 Back' },
           { id: 'Warmup', name: '🔥 Warmup' },
           { id: 'Abs & Core', name: '🍫 Abs & Core' },
@@ -2821,23 +2851,11 @@ const HomeWorkoutApp = {
           </button>
         </div>
 
-        <!-- PRO Subscription Row -->
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid var(--border-divider); padding-bottom: 14px;">
-          <div>
-            <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">PRO Membership</h4>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">${user.isPro ? '⭐ Active PRO Member' : 'Standard Free Plan'}</span>
-          </div>
-          <button class="pro-badge-btn" onclick="HomeWorkoutApp.openProModal()" style="display: inline-flex; align-items: center; gap: 4px;">
-            <span>${user.isPro ? 'MANAGE' : 'UPGRADE'}</span>
-            ${!user.isPro ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>` : ''}
-          </button>
-        </div>
-
         <!-- Reset All Progress Row -->
         <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
           <div>
             <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Reset All Progress</h4>
-            <span style="font-size: 0.8rem; color: var(--text-muted);">Clear history & restore 0/5 goal</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Clear workout history and start your plan again</span>
           </div>
           <button class="fw-start-btn" style="background: #FEE2E2; color: #DC2626; border: none; font-weight: 800; font-size: 0.8rem; padding: 6px 14px; border-radius: 9999px; cursor: pointer;" onclick="HomeWorkoutApp.resetData()">
             RESET

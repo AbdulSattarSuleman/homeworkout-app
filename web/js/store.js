@@ -1141,7 +1141,7 @@ const HomeWorkoutStore = {
     ],
 
     bodyFocusCategories: [
-      { id: 'chest', name: '🫁 Chest', active: true },
+      { id: 'chest', name: '🏋️ Chest', active: true },
       { id: 'warmup', name: '🔥 Warmup', active: false },
       { id: 'abs', name: '🍫 Abs', active: false },
       { id: 'arm', name: '🦾 Arms', active: false },

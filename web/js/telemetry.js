@@ -124,10 +124,14 @@ const TelemetryTracker = {
         localStorage.setItem('hw_activity_events_buffer', JSON.stringify(buffer));
       } catch (e) {}
 
-      // 2. Cloud Supabase Activity Log: Attempt cloud insert if connected
-      if (typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.initSupabase) {
+      // 2. Cloud Supabase Activity Log: only for signed-in users (the security rules
+      //    reject anyone else), and switched off for this visit after the first failure
+      //    (for example when the activity_logs table doesn't exist), so taps don't
+      //    each fire a failing network request.
+      if (!this.cloudLogDisabled && typeof HomeWorkoutStore !== 'undefined' && HomeWorkoutStore.initSupabase
+          && HomeWorkoutStore.isSignedIn && HomeWorkoutStore.isSignedIn()) {
         const client = HomeWorkoutStore.initSupabase();
-        if (client && !user.isGuest) {
+        if (client) {
           client.from('activity_logs').insert({
             user_id: (user.id && user.id.length === 36) ? user.id : null,
             username: user.username || 'Athlete',
@@ -136,7 +140,9 @@ const TelemetryTracker = {
             event_details: eventDetails,
             device_type: device.deviceType,
             screen_resolution: `${device.screenWidth}x${device.screenHeight}`
-          }).then(() => {}).catch(() => {});
+          }).then(res => {
+            if (res && res.error) this.cloudLogDisabled = true;
+          }).catch(() => { this.cloudLogDisabled = true; });
         }
       }
 
