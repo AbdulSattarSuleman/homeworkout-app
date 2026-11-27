@@ -100,9 +100,10 @@ const HomeWorkoutApp = {
     }
 
     // 6. Online / offline status & listeners
+    // (init already started the upload above, so the first call only updates the pill)
     window.addEventListener('online', () => this.updateOnlineStatus());
     window.addEventListener('offline', () => this.updateOnlineStatus());
-    this.updateOnlineStatus();
+    this.updateOnlineStatus({ sync: false });
 
     // 7. PWA install prompt listeners
     window.addEventListener('beforeinstallprompt', e => {
@@ -119,15 +120,31 @@ const HomeWorkoutApp = {
     this.initServiceWorker();
   },
 
-  updateOnlineStatus() {
+  updateOnlineStatus({ sync = true } = {}) {
     const isOnline = navigator.onLine !== false;
     const pill = document.getElementById('hwOfflinePill');
     if (pill) {
       pill.style.display = isOnline ? 'none' : 'flex';
     }
-    if (isOnline) {
+    if (isOnline && sync) {
+      // Back online: upload what was done offline, and save today's pictures for next time
       this.syncPendingData();
+      this.renderTodayCard();
     }
+  },
+
+  // Download the pictures and animations of the next workout while online, so they
+  // show in the gym without signal (the service worker keeps a copy). Once per session.
+  prefetchWorkoutMedia(exercises) {
+    if (!navigator.onLine || !('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
+    if (!this._prefetchedMedia) this._prefetchedMedia = new Set();
+    (exercises || []).forEach(ex => {
+      [ex && ex.thumbnailUrl, ex && ex.gifUrl].forEach(url => {
+        if (!url || this._prefetchedMedia.has(url)) return;
+        this._prefetchedMedia.add(url);
+        fetch(url, { mode: 'cors', credentials: 'omit' }).catch(() => this._prefetchedMedia.delete(url));
+      });
+    });
   },
 
   syncPendingData() {
@@ -171,7 +188,12 @@ const HomeWorkoutApp = {
       console.warn('[SW] Registration notice:', err);
     });
 
+    // Reload only when the user tapped "Refresh" on the update banner. A new worker also
+    // takes control on a visitor's very first visit (clients.claim), and reloading then
+    // would restart the page in the middle of the setup questions.
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!this._reloadOnUpdate || this._reloading) return;
+      this._reloading = true;
       window.location.reload();
     });
   },
@@ -185,6 +207,7 @@ const HomeWorkoutApp = {
   },
 
   refreshAppUpdate() {
+    this._reloadOnUpdate = true;
     if (this._waitingWorker) {
       this._waitingWorker.postMessage({ type: 'SKIP_WAITING' });
     } else {
@@ -635,6 +658,7 @@ const HomeWorkoutApp = {
     }
 
     const session = TrainingPlan.buildSession(plan);
+    if (session && !session.loading) this.prefetchWorkoutMedia(session.exercises);
     const doneToday = plan.lastCompletedAt && new Date(plan.lastCompletedAt).toDateString() === new Date().toDateString();
     const thumbFallback = `this.onerror=null;this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'44\\' height=\\'44\\'><rect width=\\'44\\' height=\\'44\\' rx=\\'10\\' fill=\\'%23F3F4F6\\'/><text x=\\'50%\\' y=\\'58%\\' text-anchor=\\'middle\\' font-size=\\'18\\'>💪</text></svg>'`;
 

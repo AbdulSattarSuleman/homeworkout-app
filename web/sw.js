@@ -1,9 +1,10 @@
 // Service Worker for Home Workout PWA
-// IMPORTANT: Keep CACHE_NAME in sync with the ?v= numbers in web/index.html.
+// IMPORTANT: when you change any ?v= number in web/index.html, change the SAME
+// number in PRECACHE_URLS below AND bump CACHE_NAME, or offline mode will miss files.
 // Whenever index.html or referenced assets change, bump the cache version here.
-const CACHE_NAME = 'hw-app-v3.18';
+const CACHE_NAME = 'hw-app-v3.19';
 const RUNTIME_CACHE = 'hw-runtime-v1';
-const RUNTIME_CACHE_LIMIT = 150;
+const RUNTIME_CACHE_LIMIT = 120; // pictures + animations kept for offline use
 
 // Pre-cached App Shell files (relative URLs so it works on GitHub Pages subpaths)
 const PRECACHE_URLS = [
@@ -16,7 +17,7 @@ const PRECACHE_URLS = [
   'js/plan.js?v=3.15',
   'js/visuals.js?v=3.15',
   'js/telemetry.js?v=3.15',
-  'js/homeworkout.js?v=3.18',
+  'js/homeworkout.js?v=3.19',
   'data/exercises_database.json',
   'assets/images/app_icon.png',
   'assets/icons/icon-192.png',
@@ -104,17 +105,21 @@ self.addEventListener('fetch', event => {
   const isGoogleFont = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
 
   if (isGithubAsset || isGoogleFont) {
-    // Stale-while-revalidate with LRU size limit
+    // Stale-while-revalidate with a size limit.
+    // <img> and <link> requests to other sites are "no-cors", which gives an opaque
+    // response (status 0) that we can't check and that browsers count as very large.
+    // These hosts allow CORS, so fetch a normal (CORS) copy instead: it can be checked,
+    // cached at its real size, and still shown by the page.
+    const corsReq = new Request(req.url, { mode: 'cors', credentials: 'omit' });
     event.respondWith(
       caches.open(RUNTIME_CACHE).then(async cache => {
-        const cachedResponse = await cache.match(req);
-        const fetchPromise = fetch(req).then(networkResponse => {
+        const cachedResponse = await cache.match(req.url);
+        const fetchPromise = fetch(corsReq).then(networkResponse => {
           if (networkResponse && networkResponse.status === 200) {
-            cache.put(req, networkResponse.clone());
-            trimCache(RUNTIME_CACHE, RUNTIME_CACHE_LIMIT);
+            cache.put(req.url, networkResponse.clone()).then(() => trimCache(RUNTIME_CACHE, RUNTIME_CACHE_LIMIT));
           }
           return networkResponse;
-        }).catch(() => null);
+        }).catch(() => fetch(req).catch(() => Response.error()));
 
         return cachedResponse || fetchPromise;
       })
