@@ -63,12 +63,7 @@ const HomeWorkoutApp = {
     } catch (e) {}
 
     // Workouts done on this device before signing in (or while offline) go into the account
-    HomeWorkoutStore.moveLocalProgressToAccount().then(count => {
-      if (count > 0) {
-        this.renderTodayCard();
-        if (this.currentTab === 'report') this.renderReportScreen();
-      }
-    }).catch(() => {});
+    this.syncPendingData();
 
     // Match the Body Focus filters to the training plan, if there is one
     const plan = HomeWorkoutStore.getPlan();
@@ -102,6 +97,98 @@ const HomeWorkoutApp = {
     // 5. A workout was in progress when the app was closed? Offer to resume it first.
     if (!isRecoveryLink && !errMatch) {
       if (!this.maybeOfferResume()) this.maybeShowOnboarding();
+    }
+
+    // 6. Online / offline status & listeners
+    window.addEventListener('online', () => this.updateOnlineStatus());
+    window.addEventListener('offline', () => this.updateOnlineStatus());
+    this.updateOnlineStatus();
+
+    // 7. PWA install prompt listeners
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      this._deferredInstallPrompt = e;
+      if (this.currentTab === 'settings') this.renderSettingsScreen();
+    });
+    window.addEventListener('appinstalled', () => {
+      this._deferredInstallPrompt = null;
+      if (this.currentTab === 'settings') this.renderSettingsScreen();
+    });
+
+    // 8. Initialize Service Worker for offline app shell and update management
+    this.initServiceWorker();
+  },
+
+  updateOnlineStatus() {
+    const isOnline = navigator.onLine !== false;
+    const pill = document.getElementById('hwOfflinePill');
+    if (pill) {
+      pill.style.display = isOnline ? 'none' : 'flex';
+    }
+    if (isOnline) {
+      this.syncPendingData();
+    }
+  },
+
+  syncPendingData() {
+    const user = HomeWorkoutStore.getUser();
+    if (user && user.plan && user.plan.goal) {
+      HomeWorkoutStore.syncPlanToCloud(user.plan);
+    }
+    HomeWorkoutStore.moveLocalProgressToAccount().then(count => {
+      if (count > 0) {
+        this.renderTodayCard();
+        if (this.currentTab === 'report') this.renderReportScreen();
+      }
+    }).catch(() => {});
+  },
+
+  initServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (location.protocol !== 'https:' && !isLocal) return;
+
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      const notifyUpdate = worker => {
+        if (!worker) return;
+        this.showUpdateBanner(worker);
+      };
+
+      if (reg.waiting) {
+        notifyUpdate(reg.waiting);
+      }
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            notifyUpdate(newWorker);
+          }
+        });
+      });
+    }).catch(err => {
+      console.warn('[SW] Registration notice:', err);
+    });
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload();
+    });
+  },
+
+  showUpdateBanner(worker) {
+    this._waitingWorker = worker;
+    const banner = document.getElementById('hwUpdateBanner');
+    if (banner) {
+      banner.style.display = 'flex';
+    }
+  },
+
+  refreshAppUpdate() {
+    if (this._waitingWorker) {
+      this._waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    } else {
+      window.location.reload();
     }
   },
 
@@ -1808,6 +1895,13 @@ const HomeWorkoutApp = {
 
     // Looping Animated GIF
     if (gifImg && exercise.gifUrl) {
+      gifImg.onerror = () => {
+        gifImg.style.display = 'none';
+        if (emojiFallback) {
+          emojiFallback.style.display = 'block';
+          emojiFallback.textContent = '💪';
+        }
+      };
       gifImg.src = exercise.gifUrl;
       gifImg.style.display = 'block';
       if (emojiFallback) emojiFallback.style.display = 'none';
@@ -1815,7 +1909,7 @@ const HomeWorkoutApp = {
       if (gifImg) gifImg.style.display = 'none';
       if (emojiFallback) {
         emojiFallback.style.display = 'block';
-        emojiFallback.textContent = '🏃‍♂️';
+        emojiFallback.textContent = '💪';
       }
     }
 
@@ -3019,6 +3113,11 @@ const HomeWorkoutApp = {
       feedback.textContent = (isErr ? '⚠️ ' : '✅ ') + msg;
     };
 
+    if (!navigator.onLine) {
+      showMsg('Connect to the internet to reset your password.');
+      return;
+    }
+
     if (!p1 || p1.length < 8) {
       showMsg('Password must be at least 8 characters long.');
       return;
@@ -4116,6 +4215,10 @@ const HomeWorkoutApp = {
   },
 
   async startGoogleSignIn() {
+    if (!navigator.onLine) {
+      this.showAuthFeedback('Connect to the internet to sign in.', 'error');
+      return;
+    }
     if (typeof TelemetryTracker !== 'undefined') TelemetryTracker.trackAuth('google_start', null);
     try {
       await HomeWorkoutStore.signInWithGoogle(); // leaves the page for Google
@@ -4196,6 +4299,16 @@ const HomeWorkoutApp = {
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.style.opacity = '0.7';
+    }
+
+    if (!navigator.onLine) {
+      const action = this.authMode === 'forgot' ? 'reset your password' : (this.authMode === 'register' ? 'create an account' : 'sign in');
+      this.showAuthFeedback(`Connect to the internet to ${action}.`, 'error');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+      }
+      return;
     }
 
     try {
@@ -4415,6 +4528,49 @@ const HomeWorkoutApp = {
       ? `${TrainingPlan.GOALS[plan.goal].icon} ${TrainingPlan.GOALS[plan.goal].label} · ${plan.daysPerWeek} days/week · ${TrainingPlan.LOCATIONS[plan.location].label} · ${plan.minutes} min`
       : 'Not set up yet';
 
+    const isStandalone = (typeof window !== 'undefined') && (
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      Boolean(window.navigator.standalone)
+    );
+    const isIOS = (typeof navigator !== 'undefined') && (
+      /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    );
+    const isIOSSafari = isIOS && !/CriOS|FxiOS|OPiOS|mercury/i.test(navigator.userAgent || '');
+
+    let installHintHtml = '';
+    if (!isStandalone) {
+      if (this._deferredInstallPrompt) {
+        installHintHtml = `
+          <!-- Install App Card (Android / Chrome) -->
+          <div class="hw-install-hint-card">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <div>
+                <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">📲 Install app</h4>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">Install on your device for quick full-screen offline access</span>
+              </div>
+              <button class="hw-install-btn" type="button" onclick="HomeWorkoutApp.promptInstallApp()">
+                Install
+              </button>
+            </div>
+          </div>
+        `;
+      } else if (isIOSSafari) {
+        installHintHtml = `
+          <!-- Install App Card (iOS Safari) -->
+          <div class="hw-install-hint-card">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 1.5rem; flex-shrink: 0;">📲</span>
+              <div>
+                <h4 style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin: 0 0 2px 0;">Install app</h4>
+                <span style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; display: block;">Tap Share ⬆️ then 'Add to Home Screen'</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+    }
+
     container.innerHTML = `
       <!-- User Profile Card -->
       <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 16px;">
@@ -4436,6 +4592,8 @@ const HomeWorkoutApp = {
           </button>
         </div>
       </div>
+
+      ${installHintHtml}
 
       <!-- Settings & Controls Card -->
       <div style="background: #FFFFFF; border-radius: 18px; padding: 18px; box-shadow: var(--shadow-card); margin-bottom: 20px;">
@@ -4506,6 +4664,16 @@ const HomeWorkoutApp = {
         </p>
       </div>
     `;
+  },
+
+  async promptInstallApp() {
+    if (!this._deferredInstallPrompt) return;
+    this._deferredInstallPrompt.prompt();
+    const choice = await this._deferredInstallPrompt.userChoice.catch(() => null);
+    if (choice && choice.outcome === 'accepted') {
+      this._deferredInstallPrompt = null;
+      this.renderSettingsScreen();
+    }
   },
 
   async resetData() {

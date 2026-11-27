@@ -3462,6 +3462,114 @@ body {
   margin-bottom: 10px;
 }
 
+/* ========================================================
+   PWA: SERVICE WORKER UPDATE BANNER & OFFLINE INDICATOR
+   ======================================================== */
+.hw-update-banner {
+  background: #0F172A;
+  color: #FFFFFF;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  animation: slideDownBanner 0.25s ease-out;
+}
+
+.hw-update-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hw-update-refresh-btn {
+  background: var(--brand-blue);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 9999px;
+  padding: 5px 14px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.hw-update-refresh-btn:hover {
+  opacity: 0.9;
+}
+
+.hw-offline-pill {
+  background: #FEF3C7;
+  color: #92400E;
+  border-bottom: 1px solid #FDE68A;
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: center;
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  animation: slideDownBanner 0.2s ease-out;
+}
+
+.hw-offline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #D97706;
+  flex-shrink: 0;
+}
+
+.hw-install-hint-card {
+  background: #FFFFFF;
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 16px;
+}
+
+.hw-install-btn {
+  background: var(--brand-blue);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 9999px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 82, 255, 0.3);
+}
+
+.hw-install-btn:hover {
+  opacity: 0.92;
+}
+
+@keyframes slideDownBanner {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
 
 
 
