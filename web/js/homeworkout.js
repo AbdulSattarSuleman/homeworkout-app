@@ -3241,7 +3241,9 @@ const HomeWorkoutApp = {
     return `${months[d.getMonth()]} ${d.getDate()}`;
   },
 
-  renderSvgLineChart(points, { unit = 'kg', strokeColor = 'var(--brand-blue)', ariaLabel = 'Progress chart', chartId = 'chart', singlePointMessage = 'Do this exercise again to see a trend' } = {}) {
+  // strokeColor must be a plain colour (e.g. '#0052FF'), not var(--…): CSS variables
+  // inside SVG attributes are not drawn by every browser (Safari on iPhone).
+  renderSvgLineChart(points, { unit = 'kg', strokeColor = '#0052FF', ariaLabel = 'Progress chart', chartId = 'chart', singlePointMessage = 'Do this exercise again to see a trend' } = {}) {
     if (!Array.isArray(points) || points.length === 0) return '';
 
     const W = 320;
@@ -3413,7 +3415,7 @@ const HomeWorkoutApp = {
 
     const chartHtml = this.renderSvgLineChart(points, {
       unit,
-      strokeColor: 'var(--brand-blue)',
+      strokeColor: '#0052FF',
       ariaLabel,
       chartId: 'ex-detail',
       singlePointMessage: 'Do this exercise again to see a trend'
@@ -3622,7 +3624,7 @@ const HomeWorkoutApp = {
       isGoodTrend = (goal === 'lose_weight' && diff < 0) || (goal === 'gain_weight' && diff > 0);
     }
 
-    const strokeColor = isGoodTrend ? '#10B981' : 'var(--brand-blue)';
+    const strokeColor = isGoodTrend ? '#10B981' : '#0052FF';
     const points = entries.map(e => ({ date: e.date, value: e.kg }));
     const ariaLabel = entries.length === 1
       ? `Body weight ${latest.kg} kg on ${this.formatShortDate(latest.date)}`
@@ -3675,7 +3677,10 @@ const HomeWorkoutApp = {
     const entries = HomeWorkoutStore.getBodyWeights();
     const latest = entries.length > 0 ? entries[entries.length - 1] : null;
     if (kgInput) kgInput.value = latest ? String(latest.kg) : '';
-    if (dateInput) dateInput.value = this._getTodayDateInputValue();
+    if (dateInput) {
+      dateInput.value = this._getTodayDateInputValue();
+      dateInput.max = this._getTodayDateInputValue(); // date picker won't offer future days
+    }
 
     this.openModal('bodyWeightModalBackdrop', 'log-weight');
   },
@@ -3862,7 +3867,7 @@ const HomeWorkoutApp = {
           </div>
           <div class="progress-stat-cell">
             <span class="progress-stat-label">Streak</span>
-            <div class="progress-stat-val flame" id="progressStatStreak">${user.streakCount} Days</div>
+            <div class="progress-stat-val flame" id="progressStatStreak">${user.streakCount} ${user.streakCount === 1 ? 'Day' : 'Days'}</div>
           </div>
           <div class="progress-stat-cell">
             <span class="progress-stat-label">Weekly Goal</span>

@@ -1665,6 +1665,12 @@ const HomeWorkoutStore = {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
       throw new Error('Please choose a valid date.');
     }
+    // No weigh-ins in the future (compare as local YYYY-MM-DD strings)
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    if (cleanDate > todayStr) {
+      throw new Error("You can't log a weight for a future date.");
+    }
 
     const list = this.getBodyWeights();
     const nowIso = new Date().toISOString();
