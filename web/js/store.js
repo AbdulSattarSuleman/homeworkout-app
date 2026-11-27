@@ -5,7 +5,8 @@ const HomeWorkoutStore = {
     WORKOUT_LOGS: 'hw_workout_logs',
     CHALLENGES: 'hw_challenges',
     AUTH_TOKEN: 'hw_auth_token',
-    ACTIVE_WORKOUT: 'hw_active_workout'
+    ACTIVE_WORKOUT: 'hw_active_workout',
+    BODY_WEIGHTS: 'hw_body_weights'
   },
 
   supabaseClient: null,
@@ -13,6 +14,7 @@ const HomeWorkoutStore = {
   pendingPasswordRecovery: false,
   _inflightLogIds: new Set(),
   _uploadingLocal: false,
+  _bodyWeightsTableMissing: false,
 
   initSupabase() {
     // Proactively purge any legacy client-side accounts vault so password hashes are never stored locally
@@ -377,7 +379,9 @@ const HomeWorkoutStore = {
   },
 
   async moveLocalProgressToAccount() {
-    return this.uploadLocalWorkouts();
+    const count = await this.uploadLocalWorkouts();
+    await this.uploadLocalBodyWeights();
+    return count;
   },
 
   // "Save your progress" prompt: only for people without an account who have trained,
@@ -649,12 +653,14 @@ const HomeWorkoutStore = {
       try { client.auth.signOut(); } catch (e) {}
     }
     this.setToken(null);
+    this._bodyWeightsTableMissing = false;
     try {
       localStorage.removeItem(this.KEYS.USER_PROGRESS);
       // Workout history is in the account; remove it from this device so the next
       // person using this phone doesn't see it (or get it added to their account)
       localStorage.removeItem(this.KEYS.WORKOUT_LOGS);
       localStorage.removeItem(this.KEYS.ACTIVE_WORKOUT);
+      localStorage.removeItem(this.KEYS.BODY_WEIGHTS);
     } catch (e) {}
     const user = JSON.parse(JSON.stringify(this.initialState.user));
     user.username = null;
@@ -906,6 +912,9 @@ const HomeWorkoutStore = {
         user.streakCount = this.calculateStreak(mergedList);
         this.saveUser(user);
       }
+
+      // 3. Fetch & Merge Cloud Body Weights
+      await this.syncBodyWeightsFromCloud(userId);
     } catch (err) {
       console.warn('[Supabase] syncFromCloud error:', err);
     }
@@ -1392,6 +1401,456 @@ const HomeWorkoutStore = {
       }
     }
     return best;
+  },
+
+  _getLogExercises(log) {
+    if (!log) return [];
+    return Array.isArray(log.exercises) && log.exercises.length > 0
+      ? log.exercises
+      : (Array.isArray(log.blocks) ? log.blocks : []);
+  },
+
+  _isCardioLogExercise(ex, doneSets = []) {
+    if (!ex) return true;
+    if (ex.planSlot === 'cardio') return true;
+    if (doneSets.length > 0 && doneSets.every(s => s.minutes != null || s.rounds != null)) return true;
+    return false;
+  },
+
+  _isBodyweightLogExercise(ex, doneSets = []) {
+    if (ex && ex.equipment_tier === 'bodyweight') return true;
+    if (ex && ex.id && typeof TrainingPlan !== 'undefined' && TrainingPlan.lookup) {
+      const looked = TrainingPlan.lookup(ex.id);
+      if (looked && looked.equipment_tier === 'bodyweight') return true;
+    }
+    return doneSets.length > 0 && doneSets.every(s => !(Number(s.weight) > 0));
+  },
+
+  _getLogsSortedByDate(ascending = false) {
+    return this.getWorkoutLogs().slice().sort((a, b) => {
+      const ta = new Date((a && a.completedAt) || 0).getTime() || 0;
+      const tb = new Date((b && b.completedAt) || 0).getTime() || 0;
+      return ascending ? ta - tb : tb - ta;
+    });
+  },
+
+  getLoggedExercises() {
+    const logs = this._getLogsSortedByDate(false); // newest first
+    const byId = new Map();
+
+    for (const log of logs) {
+      if (!log) continue;
+      const list = this._getLogExercises(log);
+      const seenInLog = new Set();
+
+      for (const ex of list) {
+        if (!ex || !ex.id || !Array.isArray(ex.loggedSets)) continue;
+        const doneSets = ex.loggedSets.filter(s => s && s.done && ((Number(s.weight) > 0) || (Number(s.reps) > 0)));
+        if (doneSets.length === 0 || this._isCardioLogExercise(ex, doneSets)) continue;
+
+        const id = String(ex.id);
+        const existing = byId.get(id);
+        const isBw = this._isBodyweightLogExercise(ex, doneSets);
+        if (!existing) {
+          byId.set(id, {
+            id,
+            name: ex.name || 'Exercise',
+            target: ex.target || '',
+            sessions: 1,
+            lastDate: log.completedAt || null,
+            isBodyweight: isBw
+          });
+          seenInLog.add(id);
+        } else {
+          if (!seenInLog.has(id)) {
+            existing.sessions++;
+            seenInLog.add(id);
+          }
+          if (!isBw) existing.isBodyweight = false;
+        }
+      }
+    }
+
+    return Array.from(byId.values()).sort((a, b) => {
+      const ta = new Date(a.lastDate || 0).getTime() || 0;
+      const tb = new Date(b.lastDate || 0).getTime() || 0;
+      return tb - ta;
+    });
+  },
+
+  getExerciseHistory(exerciseId) {
+    if (!exerciseId) return [];
+    const targetId = String(exerciseId);
+    const logs = this._getLogsSortedByDate(true); // oldest first
+    const history = [];
+
+    for (const log of logs) {
+      if (!log) continue;
+      const list = this._getLogExercises(log);
+      const matchedSets = [];
+      let matchedEx = null;
+
+      for (const ex of list) {
+        if (!ex || String(ex.id) !== targetId || !Array.isArray(ex.loggedSets)) continue;
+        const doneSets = ex.loggedSets.filter(s => s && s.done && ((Number(s.weight) > 0) || (Number(s.reps) > 0)));
+        if (doneSets.length === 0 || this._isCardioLogExercise(ex, doneSets)) continue;
+        matchedEx = ex;
+        matchedSets.push(...doneSets);
+      }
+
+      if (!matchedEx || matchedSets.length === 0) continue;
+
+      const isBw = this._isBodyweightLogExercise(matchedEx, matchedSets);
+      const sets = matchedSets.map(s => ({
+        weight: isBw || s.weight == null || s.weight === '' ? null : Number(s.weight),
+        reps: Number(s.reps) || 0
+      }));
+
+      let topWeight = null;
+      let bestReps = 0;
+      let max1RM = 0;
+      let volume = 0;
+
+      for (const s of sets) {
+        if (s.reps > bestReps) bestReps = s.reps;
+        if (!isBw && s.weight > 0) {
+          if (topWeight === null || s.weight > topWeight) topWeight = s.weight;
+          if (s.reps > 0) {
+            volume += s.weight * s.reps;
+            const est = s.weight * (1 + s.reps / 30);
+            if (est > max1RM) max1RM = est;
+          }
+        }
+      }
+
+      history.push({
+        date: log.completedAt || null,
+        sets,
+        topWeight: isBw ? null : topWeight,
+        bestReps,
+        best1RM: isBw ? null : (max1RM > 0 ? Math.round(max1RM * 10) / 10 : 0),
+        volume: Math.round(volume)
+      });
+    }
+
+    return history;
+  },
+
+  getPersonalRecords() {
+    const logs = this._getLogsSortedByDate(true); // oldest first
+    const stateById = new Map(); // id -> { baseline, record }
+
+    for (const log of logs) {
+      if (!log) continue;
+      const list = this._getLogExercises(log);
+      const perLogBest = new Map();
+
+      for (const ex of list) {
+        if (!ex || !ex.id || !Array.isArray(ex.loggedSets)) continue;
+        const doneSets = ex.loggedSets.filter(s => s && s.done && ((Number(s.weight) > 0) || (Number(s.reps) > 0)));
+        if (doneSets.length === 0 || this._isCardioLogExercise(ex, doneSets)) continue;
+
+        const id = String(ex.id);
+        const isBw = this._isBodyweightLogExercise(ex, doneSets);
+        let entry = perLogBest.get(id) || {
+          name: ex.name || 'Exercise',
+          isBodyweight: isBw,
+          metric: 0,
+          weight: null,
+          reps: 0
+        };
+
+        for (const s of doneSets) {
+          const r = Number(s.reps) || 0;
+          const w = isBw || s.weight == null || s.weight === '' ? null : Number(s.weight);
+          if (isBw) {
+            if (r > entry.metric) {
+              entry = { name: ex.name || entry.name, isBodyweight: true, metric: r, weight: null, reps: r };
+            }
+          } else if (w > 0 && r > 0) {
+            const est = w * (1 + r / 30);
+            if (est > entry.metric) {
+              entry = { name: ex.name || entry.name, isBodyweight: false, metric: est, weight: w, reps: r };
+            }
+          }
+        }
+        if (entry.metric > 0) perLogBest.set(id, entry);
+      }
+
+      for (const [id, cur] of perLogBest.entries()) {
+        const state = stateById.get(id);
+        if (!state) {
+          // First ever log sets the baseline; only beating an earlier best counts as a record
+          stateById.set(id, { baseline: cur.metric, record: null });
+        } else if (cur.metric > state.baseline) {
+          state.baseline = cur.metric;
+          state.record = {
+            exerciseId: id,
+            name: cur.name,
+            weight: cur.isBodyweight ? null : cur.weight,
+            reps: cur.reps,
+            est1RM: cur.isBodyweight ? null : Math.round(cur.metric * 10) / 10,
+            date: log.completedAt || null,
+            isBodyweight: cur.isBodyweight
+          };
+        }
+      }
+    }
+
+    const records = [];
+    for (const s of stateById.values()) {
+      if (s.record) records.push(s.record);
+    }
+    return records.sort((a, b) => {
+      const ta = new Date(a.date || 0).getTime() || 0;
+      const tb = new Date(b.date || 0).getTime() || 0;
+      return tb - ta;
+    });
+  },
+
+  getWeeklyVolumeKg() {
+    const weekStartMs = this.getWeekStart().getTime();
+    const logs = this.getWorkoutLogs();
+    let total = 0;
+
+    for (const log of logs) {
+      if (!log || !log.completedAt) continue;
+      const t = new Date(log.completedAt).getTime();
+      if (isNaN(t) || t < weekStartMs) continue;
+      for (const ex of this._getLogExercises(log)) {
+        if (!ex || !Array.isArray(ex.loggedSets)) continue;
+        const doneSets = ex.loggedSets.filter(s => s && s.done);
+        if (doneSets.length === 0 || this._isCardioLogExercise(ex, doneSets)) continue;
+        for (const s of doneSets) {
+          const w = Number(s.weight);
+          const r = Number(s.reps);
+          if (w > 0 && r > 0) total += w * r;
+        }
+      }
+    }
+    return Math.round(total);
+  },
+
+  getBodyWeights() {
+    try {
+      const raw = localStorage.getItem(this.KEYS.BODY_WEIGHTS);
+      const list = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(list)) return [];
+      return list
+        .filter(e => e && e.date && Number(e.kg) >= 30 && Number(e.kg) <= 300)
+        .slice()
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    } catch (e) {
+      return [];
+    }
+  },
+
+  _saveBodyWeightsList(list) {
+    try {
+      const sorted = (list || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      localStorage.setItem(this.KEYS.BODY_WEIGHTS, JSON.stringify(sorted));
+      return sorted;
+    } catch (e) {
+      return list || [];
+    }
+  },
+
+  saveBodyWeight(kgRaw, dateStr) {
+    const num = Number(String(kgRaw == null ? '' : kgRaw).replace(',', '.').trim());
+    if (!Number.isFinite(num) || num < 30 || num > 300) {
+      throw new Error('Please enter a weight between 30 and 300 kg.');
+    }
+    const kg = Math.round(num * 100) / 100;
+    const cleanDate = String(dateStr || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+      throw new Error('Please choose a valid date.');
+    }
+
+    const list = this.getBodyWeights();
+    const nowIso = new Date().toISOString();
+    const existingIdx = list.findIndex(e => e.date === cleanDate);
+    let entry;
+
+    if (existingIdx >= 0) {
+      entry = { ...list[existingIdx], kg, updatedAt: nowIso, cloudSynced: false };
+      list[existingIdx] = entry;
+    } else {
+      entry = { id: 'bw_' + Date.now(), date: cleanDate, kg, updatedAt: nowIso, cloudSynced: false };
+      list.push(entry);
+    }
+
+    this._saveBodyWeightsList(list);
+    if (this.isSignedIn()) {
+      this.syncBodyWeightToCloud(entry);
+    }
+    return entry;
+  },
+
+  deleteBodyWeight(idOrDate) {
+    const list = this.getBodyWeights();
+    const key = String(idOrDate);
+    const target = list.find(e => String(e.id) === key || e.date === key);
+    if (!target) return list;
+
+    const filtered = list.filter(e => e !== target);
+    this._saveBodyWeightsList(filtered);
+    if (this.isSignedIn()) {
+      this.deleteBodyWeightFromCloud(target);
+    }
+    return filtered;
+  },
+
+  _isMissingBodyWeightsTableError(err) {
+    if (!err) return false;
+    const code = String(err.code || '');
+    const status = Number(err.status || err.statusCode || 0);
+    const msg = String(err.message || err.details || '');
+    return code === '42P01'
+      || code === 'PGRST205'
+      || status === 404
+      || /does not exist|not find the table|schema cache/i.test(msg);
+  },
+
+  async syncBodyWeightToCloud(entry) {
+    if (!entry || this._bodyWeightsTableMissing || !this.isSignedIn()) return;
+    const client = this.initSupabase();
+    if (!client) return;
+    try {
+      const { data: sessionData } = await client.auth.getSession();
+      const uid = sessionData && sessionData.session && sessionData.session.user ? sessionData.session.user.id : null;
+      if (!uid) return;
+
+      const { data: row, error } = await client
+        .from('body_weights')
+        .upsert({
+          user_id: uid,
+          measured_on: entry.date,
+          weight_kg: entry.kg
+        }, { onConflict: 'user_id,measured_on' })
+        .select('id')
+        .single();
+
+      if (error) {
+        if (this._isMissingBodyWeightsTableError(error)) {
+          this._bodyWeightsTableMissing = true;
+        }
+        console.warn('[Supabase] body_weights upsert notice:', error.message || error);
+        return;
+      }
+
+      if (row && row.id) {
+        const current = this.getBodyWeights();
+        const item = current.find(e => e.date === entry.date);
+        if (item) {
+          item.id = String(row.id);
+          item.cloudSynced = true;
+          this._saveBodyWeightsList(current);
+        }
+      }
+    } catch (e) {
+      if (this._isMissingBodyWeightsTableError(e)) this._bodyWeightsTableMissing = true;
+      console.warn('[Supabase] body_weights upsert notice:', e);
+    }
+  },
+
+  async deleteBodyWeightFromCloud(entry) {
+    if (!entry || this._bodyWeightsTableMissing || !this.isSignedIn()) return;
+    const client = this.initSupabase();
+    if (!client) return;
+    try {
+      const { data: sessionData } = await client.auth.getSession();
+      const uid = sessionData && sessionData.session && sessionData.session.user ? sessionData.session.user.id : null;
+      if (!uid) return;
+
+      const { error } = await client
+        .from('body_weights')
+        .delete()
+        .eq('user_id', uid)
+        .eq('measured_on', entry.date);
+
+      if (error) {
+        if (this._isMissingBodyWeightsTableError(error)) {
+          this._bodyWeightsTableMissing = true;
+        }
+        console.warn('[Supabase] body_weights delete notice:', error.message || error);
+      }
+    } catch (e) {
+      if (this._isMissingBodyWeightsTableError(e)) this._bodyWeightsTableMissing = true;
+      console.warn('[Supabase] body_weights delete notice:', e);
+    }
+  },
+
+  async uploadLocalBodyWeights() {
+    if (this._bodyWeightsTableMissing || !this.isSignedIn()) return 0;
+    const pending = this.getBodyWeights().filter(e => !e.cloudSynced);
+    let count = 0;
+    for (const entry of pending) {
+      if (this._bodyWeightsTableMissing) break;
+      await this.syncBodyWeightToCloud(entry);
+      count++;
+    }
+    return count;
+  },
+
+  async syncBodyWeightsFromCloud(userId = null) {
+    if (this._bodyWeightsTableMissing) return;
+    const client = this.initSupabase();
+    if (!client) return;
+    try {
+      let uid = userId;
+      if (!uid) {
+        const { data: sessionData } = await client.auth.getSession();
+        uid = sessionData && sessionData.session && sessionData.session.user ? sessionData.session.user.id : null;
+      }
+      if (!uid) return;
+
+      const { data: rows, error } = await client
+        .from('body_weights')
+        .select('*')
+        .eq('user_id', uid)
+        .order('measured_on', { ascending: true });
+
+      if (error) {
+        if (this._isMissingBodyWeightsTableError(error)) {
+          this._bodyWeightsTableMissing = true;
+        }
+        console.warn('[Supabase] body_weights fetch notice:', error.message || error);
+        return;
+      }
+
+      if (!Array.isArray(rows) || rows.length === 0) return;
+
+      const localList = this.getBodyWeights();
+      const byDate = new Map();
+      localList.forEach(item => byDate.set(item.date, item));
+
+      rows.forEach(r => {
+        const d = String(r.measured_on || '').slice(0, 10);
+        if (!d) return;
+        const local = byDate.get(d);
+        if (!local) {
+          byDate.set(d, {
+            id: String(r.id),
+            date: d,
+            kg: Number(r.weight_kg),
+            updatedAt: r.created_at || new Date().toISOString(),
+            cloudSynced: true
+          });
+        } else if (local.cloudSynced) {
+          byDate.set(d, {
+            ...local,
+            id: String(r.id),
+            kg: Number(r.weight_kg),
+            cloudSynced: true
+          });
+        }
+      });
+
+      this._saveBodyWeightsList(Array.from(byDate.values()));
+    } catch (e) {
+      if (this._isMissingBodyWeightsTableError(e)) this._bodyWeightsTableMissing = true;
+      console.warn('[Supabase] body_weights fetch notice:', e);
+    }
   },
 
   saveActiveWorkout(payload) {

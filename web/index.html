@@ -15,7 +15,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   
   <!-- Pixel-Accurate Stylesheet -->
-  <link rel="stylesheet" href="css/homeworkout.css?v=3.15">
+  <link rel="stylesheet" href="css/homeworkout.css?v=3.16">
 </head>
 <body>
 
@@ -362,6 +362,43 @@
       <p class="save-progress-text" id="resumeWorkoutText">You have a workout in progress.</p>
       <button type="button" class="ob-primary-btn" style="margin-top: 4px;" onclick="HomeWorkoutApp.resumeSavedWorkout()">Resume workout</button>
       <button type="button" class="save-progress-link muted" onclick="HomeWorkoutApp.discardSavedWorkout()">Discard it</button>
+    </div>
+  </div>
+
+  <!-- SHEET: EXERCISE PROGRESS DETAIL & CHART (Plan 3B, Feature 3) -->
+  <div class="bottom-sheet-backdrop" id="exerciseProgressBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeExerciseProgress()">
+    <div class="bottom-sheet-box progress-detail-sheet" role="dialog" aria-modal="true" aria-labelledby="exerciseProgressTitle">
+      <div id="exerciseProgressContent"></div>
+    </div>
+  </div>
+
+  <!-- SHEET: LOG BODY WEIGHT (Plan 3B, Feature 5) -->
+  <div class="bottom-sheet-backdrop" id="bodyWeightModalBackdrop" onclick="if(event.target === this) HomeWorkoutApp.closeBodyWeightModal()">
+    <div class="bottom-sheet-box" role="dialog" aria-modal="true" aria-labelledby="bodyWeightModalTitle">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 class="sheet-title" style="margin: 0;" id="bodyWeightModalTitle">Log Body Weight</h3>
+        <button type="button" class="runner-close-btn" onclick="HomeWorkoutApp.closeBodyWeightModal()" style="font-size: 1.1rem; padding: 4px 8px;">✕</button>
+      </div>
+      <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 12px;">
+        Weigh yourself once a week, same day, first thing in the morning.
+      </p>
+
+      <div id="bodyWeightFeedback" class="bw-feedback" style="display: none;"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+        <div>
+          <label for="bodyWeightKgInput" style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Weight (kg)</label>
+          <input type="text" inputmode="decimal" id="bodyWeightKgInput" class="bw-input" placeholder="e.g. 74.5" onkeydown="if(event.key === 'Enter') HomeWorkoutApp.submitBodyWeight()">
+        </div>
+        <div>
+          <label for="bodyWeightDateInput" style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Date</label>
+          <input type="date" id="bodyWeightDateInput" class="bw-input">
+        </div>
+      </div>
+
+      <button type="button" class="start-day-pill-btn" id="bodyWeightSaveBtn" style="background: var(--brand-blue); color: #FFFFFF;" onclick="HomeWorkoutApp.submitBodyWeight()">
+        Save
+      </button>
     </div>
   </div>
 
@@ -712,10 +749,10 @@
 
   <!-- Application Logic Scripts -->
   <script src="js/exercises.js?v=3.15"></script>
-  <script src="js/store.js?v=3.15"></script>
+  <script src="js/store.js?v=3.16"></script>
   <script src="js/plan.js?v=3.15"></script>
   <script src="js/visuals.js?v=3.15"></script>
   <script src="js/telemetry.js?v=3.15"></script>
-  <script src="js/homeworkout.js?v=3.15"></script>
+  <script src="js/homeworkout.js?v=3.16"></script>
 </body>
 </html>

@@ -36,6 +36,8 @@ const HomeWorkoutApp = {
   historySelectionMode: false,
   selectedLogIds: new Set(),
   cachedTimelineLogs: [],
+  _chartData: {},
+  showAllRecords: false,
 
   async init() {
     this.activeFocusLevel = HomeWorkoutStore.getUserLevel();
@@ -3126,7 +3128,9 @@ const HomeWorkoutApp = {
       'proModalBackdrop',
       'swapExerciseModalBackdrop',
       'saveProgressBackdrop',
-      'resumeWorkoutBackdrop'
+      'resumeWorkoutBackdrop',
+      'exerciseProgressBackdrop',
+      'bodyWeightModalBackdrop'
     ];
     for (const id of modalBackdrops) {
       const modal = document.getElementById(id);
@@ -3212,6 +3216,496 @@ const HomeWorkoutApp = {
     if (scrollContainer) scrollContainer.scrollTop = 0;
   },
 
+  _parseDate(isoOrDate) {
+    if (!isoOrDate) return null;
+    const s = String(isoOrDate).trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  },
+
+  formatShortDate(isoOrDate) {
+    const d = this._parseDate(isoOrDate);
+    if (!d) return '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${d.getDate()} ${months[d.getMonth()]}`;
+  },
+
+  formatMonthDay(isoOrDate) {
+    const d = this._parseDate(isoOrDate);
+    if (!d) return '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[d.getMonth()]} ${d.getDate()}`;
+  },
+
+  renderSvgLineChart(points, { unit = 'kg', strokeColor = 'var(--brand-blue)', ariaLabel = 'Progress chart', chartId = 'chart', singlePointMessage = 'Do this exercise again to see a trend' } = {}) {
+    if (!Array.isArray(points) || points.length === 0) return '';
+
+    const W = 320;
+    const H = 160;
+    const padL = 40;
+    const padR = 14;
+    const padT = 16;
+    const padB = 26;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const vals = points.map(p => Number(p.value) || 0);
+    const minRaw = Math.min(...vals);
+    const maxRaw = Math.max(...vals);
+    let yMin, yMax;
+    if (minRaw === maxRaw) {
+      const pad = unit === 'reps' ? 2 : 5;
+      yMin = Math.max(0, minRaw - pad);
+      yMax = maxRaw + pad;
+    } else {
+      const span = maxRaw - minRaw;
+      yMin = Math.max(0, minRaw - span * 0.15);
+      yMax = maxRaw + span * 0.15;
+    }
+    const ySpan = (yMax - yMin) || 1;
+    const formatAxisNum = n => {
+      const rounded = Math.round(n * 10) / 10;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    };
+
+    const coords = points.map((p, i) => {
+      const x = points.length === 1
+        ? padL + plotW / 2
+        : padL + (i / (points.length - 1)) * plotW;
+      const y = points.length === 1 && minRaw === maxRaw
+        ? padT + plotH / 2
+        : padT + plotH - ((Number(p.value) - yMin) / ySpan) * plotH;
+      return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, point: p, idx: i };
+    });
+
+    this._chartData[chartId] = { points, unit, strokeColor };
+
+    const gridTicks = [yMin, yMin + ySpan / 2, yMax];
+    const gridHtml = gridTicks.map(v => {
+      const y = Math.round((padT + plotH - ((v - yMin) / ySpan) * plotH) * 10) / 10;
+      return `
+        <line class="chart-grid-line" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"></line>
+        <text class="chart-axis-label" x="${padL - 6}" y="${y + 3}" text-anchor="end">${this.escapeHtml(formatAxisNum(v))}</text>
+      `;
+    }).join('');
+
+    const labelIndices = [];
+    if (points.length === 1) {
+      labelIndices.push({ i: 0, anchor: 'middle' });
+    } else if (points.length === 2) {
+      labelIndices.push({ i: 0, anchor: 'start' }, { i: 1, anchor: 'end' });
+    } else {
+      const mid = Math.floor((points.length - 1) / 2);
+      labelIndices.push({ i: 0, anchor: 'start' }, { i: mid, anchor: 'middle' }, { i: points.length - 1, anchor: 'end' });
+    }
+    const xLabelsHtml = labelIndices.map(({ i, anchor }) => {
+      const c = coords[i];
+      const lbl = this.formatShortDate(c.point.date) || c.point.label || '';
+      return `<text class="chart-axis-label" x="${c.x}" y="${H - 6}" text-anchor="${anchor}">${this.escapeHtml(lbl)}</text>`;
+    }).join('');
+
+    const polyPoints = coords.map(c => `${c.x},${c.y}`).join(' ');
+    const baseRadius = points.length > 20 ? 3 : 4.5;
+    const dotsHtml = coords.map(c => `
+      <g onclick="HomeWorkoutApp.selectChartPoint('${this.escapeHtml(chartId)}', ${c.idx})">
+        <circle class="chart-dot-hit" cx="${c.x}" cy="${c.y}" r="11"></circle>
+        <circle class="chart-dot" id="chartDot-${this.escapeHtml(chartId)}-${c.idx}"
+          cx="${c.x}" cy="${c.y}" r="${baseRadius}"
+          fill="#FFFFFF" stroke="${this.escapeHtml(strokeColor)}" stroke-width="2.5"></circle>
+      </g>
+    `).join('');
+
+    const lastPt = points[points.length - 1];
+    const lastLbl = this.formatShortDate(lastPt.date) || lastPt.label || '';
+    const defaultReadout = `${lastLbl ? lastLbl + ' · ' : ''}${lastPt.value} ${unit}`;
+
+    return `
+      <div class="progress-chart-box">
+        <svg class="progress-chart-svg" id="chartSvg-${this.escapeHtml(chartId)}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${this.escapeHtml(ariaLabel)}">
+          ${gridHtml}
+          ${points.length >= 2 ? `<polyline fill="none" stroke="${this.escapeHtml(strokeColor)}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${polyPoints}"></polyline>` : ''}
+          ${dotsHtml}
+          ${xLabelsHtml}
+        </svg>
+        <div class="chart-readout" id="chartReadout-${this.escapeHtml(chartId)}">${this.escapeHtml(defaultReadout)}</div>
+        ${points.length === 1 && singlePointMessage ? `<div class="chart-single-hint">${this.escapeHtml(singlePointMessage)}</div>` : ''}
+      </div>
+    `;
+  },
+
+  selectChartPoint(chartId, idx) {
+    const data = this._chartData && this._chartData[chartId];
+    if (!data || !data.points || !data.points[idx]) return;
+    const pt = data.points[idx];
+    const baseRadius = data.points.length > 20 ? 3 : 4.5;
+
+    data.points.forEach((_, i) => {
+      const dot = document.getElementById(`chartDot-${chartId}-${i}`);
+      if (!dot) return;
+      const selected = i === idx;
+      dot.setAttribute('r', String(selected ? baseRadius + 2 : baseRadius));
+      dot.setAttribute('fill', selected ? data.strokeColor : '#FFFFFF');
+    });
+
+    const readout = document.getElementById(`chartReadout-${chartId}`);
+    if (readout) {
+      const dateStr = this.formatShortDate(pt.date) || pt.label || '';
+      readout.textContent = `${dateStr ? dateStr + ' · ' : ''}${pt.value} ${data.unit}`;
+    }
+  },
+
+  openExerciseProgress(exerciseId) {
+    const history = HomeWorkoutStore.getExerciseHistory(exerciseId);
+    const meta = HomeWorkoutStore.getLoggedExercises().find(e => String(e.id) === String(exerciseId));
+    const content = document.getElementById('exerciseProgressContent');
+    if (!content) return;
+
+    const exName = (meta && meta.name) || 'Exercise Progress';
+    const isBw = meta ? meta.isBodyweight : (history.length > 0 && history[0].topWeight === null);
+    const unit = isBw ? 'reps' : 'kg';
+
+    if (history.length === 0) {
+      content.innerHTML = `
+        <div class="progress-detail-header">
+          <h3 class="sheet-title" id="exerciseProgressTitle" style="margin: 0;">${this.escapeHtml(exName)}</h3>
+          <button type="button" class="runner-close-btn" onclick="HomeWorkoutApp.closeExerciseProgress()" style="font-size: 1.1rem; padding: 4px 8px;">✕</button>
+        </div>
+        <p class="progress-empty-hint">No completed sets logged for this exercise yet.</p>
+      `;
+      this.openModal('exerciseProgressBackdrop', 'exercise-progress');
+      return;
+    }
+
+    const points = history.map(h => ({
+      date: h.date,
+      value: isBw ? h.bestReps : h.best1RM
+    }));
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    const diff = Math.round((last.value - first.value) * 10) / 10;
+    const sinceStr = this.formatMonthDay(first.date);
+
+    let headline = '';
+    let ariaLabel = '';
+    if (points.length === 1) {
+      headline = isBw ? `Best: ${last.value} reps` : `Estimated 1RM: ${last.value} kg`;
+      ariaLabel = isBw
+        ? `Best reps ${last.value} over 1 workout`
+        : `Estimated max ${last.value} kg over 1 workout`;
+    } else {
+      if (diff > 0) {
+        headline = isBw ? `+${diff} reps since ${sinceStr}` : `Up ${diff} kg since ${sinceStr}`;
+      } else if (diff < 0) {
+        headline = isBw ? `${diff} reps since ${sinceStr}` : `Down ${Math.abs(diff)} kg since ${sinceStr}`;
+      } else {
+        headline = `No change since ${sinceStr}`;
+      }
+      const verb = diff > 0 ? 'rose' : (diff < 0 ? 'fell' : 'stayed at');
+      ariaLabel = isBw
+        ? `Best reps ${verb} from ${first.value} to ${last.value} over ${points.length} workouts`
+        : `Estimated max ${verb} from ${first.value} to ${last.value} kg over ${points.length} workouts`;
+    }
+
+    const chartHtml = this.renderSvgLineChart(points, {
+      unit,
+      strokeColor: 'var(--brand-blue)',
+      ariaLabel,
+      chartId: 'ex-detail',
+      singlePointMessage: 'Do this exercise again to see a trend'
+    });
+
+    const sessionsHtml = history.slice().reverse().map(h => {
+      const dateStr = this.formatShortDate(h.date);
+      const setsText = this.formatExerciseSetsSummary({
+        loggedSets: h.sets.map(s => ({ ...s, done: true }))
+      });
+      return `
+        <div class="progress-session-row">
+          <span class="progress-session-date">${this.escapeHtml(dateStr)}</span>
+          <span class="progress-session-sets">${this.escapeHtml(setsText)}</span>
+        </div>
+      `;
+    }).join('');
+
+    content.innerHTML = `
+      <div class="progress-detail-header">
+        <div>
+          <h3 class="sheet-title" id="exerciseProgressTitle" style="margin: 0;">${this.escapeHtml(exName)}</h3>
+          <div style="font-size: 0.76rem; color: var(--text-muted); font-weight: 700; margin-top: 2px;">
+            ${isBw ? 'Best reps per workout' : 'Estimated 1-rep max over time'}
+          </div>
+        </div>
+        <button type="button" class="runner-close-btn" onclick="HomeWorkoutApp.closeExerciseProgress()" style="font-size: 1.1rem; padding: 4px 8px;">✕</button>
+      </div>
+
+      <div class="progress-headline-pill ${diff > 0 ? 'positive' : ''}" id="exerciseProgressHeadline">${this.escapeHtml(headline)}</div>
+
+      ${chartHtml}
+
+      <div style="font-size: 0.78rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px;">
+        Past Sessions (${history.length})
+      </div>
+      <div class="progress-session-list">
+        ${sessionsHtml}
+      </div>
+    `;
+
+    this.openModal('exerciseProgressBackdrop', 'exercise-progress');
+  },
+
+  closeExerciseProgress(fromPop = false) {
+    this.closeModal('exerciseProgressBackdrop', fromPop);
+  },
+
+  formatExerciseSetsSummary(ex) {
+    if (!ex || !Array.isArray(ex.loggedSets)) return '';
+    const doneSets = ex.loggedSets.filter(s => s && s.done);
+    if (doneSets.length === 0) return '';
+    if (ex.planSlot === 'cardio' || doneSets.every(s => s.minutes != null || s.rounds != null)) {
+      const s = doneSets[0];
+      if (s.minutes != null) return `${s.minutes} min`;
+      if (s.rounds != null) return `${s.rounds} × ${s.seconds || 40}s`;
+      return 'Done';
+    }
+    const weighted = doneSets.some(s => Number(s.weight) > 0);
+    if (!weighted) {
+      return `${doneSets.map(s => Number(s.reps) || 0).join(', ')} reps`;
+    }
+    const firstW = doneSets[0].weight;
+    const allSame = firstW != null && doneSets.every(s => Number(s.weight) === Number(firstW) && Number(s.weight) > 0);
+    if (allSame) {
+      return `${Number(firstW)} kg × ${doneSets.map(s => Number(s.reps) || 0).join(', ')}`;
+    }
+    return doneSets
+      .map(s => (Number(s.weight) > 0 ? `${Number(s.weight)} kg × ${Number(s.reps) || 0}` : `${Number(s.reps) || 0} reps`))
+      .join(', ');
+  },
+
+  renderExerciseProgressSection(loggedExercises) {
+    if (!loggedExercises || loggedExercises.length === 0) {
+      return `
+        <div class="progress-section-card" id="progressExercisesCard">
+          <div class="progress-section-head">
+            <h3 class="progress-section-title">Exercise Progress</h3>
+          </div>
+          <p class="progress-empty-hint">Log sets in a plan workout to unlock charts per exercise.</p>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="progress-section-card" id="progressExercisesCard">
+        <div class="progress-section-head">
+          <h3 class="progress-section-title">Exercise Progress</h3>
+        </div>
+        <div class="progress-list">
+          ${loggedExercises.map(ex => {
+            const lastStr = this.formatShortDate(ex.lastDate);
+            const countLabel = `${ex.sessions} workout${ex.sessions === 1 ? '' : 's'}${lastStr ? ` · Last ${lastStr}` : ''}`;
+            return `
+              <button type="button" class="progress-ex-row" data-ex-id="${this.escapeHtml(ex.id)}" onclick="HomeWorkoutApp.openExerciseProgress('${this.escapeHtml(ex.id)}')">
+                <div class="progress-ex-info">
+                  <div class="progress-ex-name">${this.escapeHtml(ex.name)}</div>
+                  <div class="progress-ex-meta">${this.escapeHtml(countLabel)}</div>
+                </div>
+                <span class="progress-ex-chevron">›</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  },
+
+  toggleShowAllRecords() {
+    this.showAllRecords = !this.showAllRecords;
+    this.renderReportScreen();
+  },
+
+  renderPersonalRecordsSection(records) {
+    if (!records || records.length === 0) {
+      return `
+        <div class="progress-section-card" id="progressRecordsCard">
+          <div class="progress-section-head">
+            <h3 class="progress-section-title">Personal Records</h3>
+          </div>
+          <p class="progress-empty-hint">Beat an earlier best on any exercise to earn your first trophy.</p>
+        </div>
+      `;
+    }
+
+    const visible = this.showAllRecords ? records : records.slice(0, 5);
+    const hasMore = records.length > 5;
+
+    return `
+      <div class="progress-section-card" id="progressRecordsCard">
+        <div class="progress-section-head">
+          <h3 class="progress-section-title">Personal Records</h3>
+          ${hasMore ? `
+            <button type="button" class="progress-link-btn" id="prSeeAllBtn" onclick="HomeWorkoutApp.toggleShowAllRecords()">
+              ${this.showAllRecords ? 'Show top 5' : `See all (${records.length})`}
+            </button>
+          ` : ''}
+        </div>
+        <div class="progress-list">
+          ${visible.map(rec => {
+            const dateStr = this.formatShortDate(rec.date);
+            const scoreStr = rec.isBodyweight
+              ? `${rec.reps} reps`
+              : `${rec.weight} kg × ${rec.reps}`;
+            const oneRmStr = rec.isBodyweight
+              ? ''
+              : `1RM ${rec.est1RM} kg`;
+            return `
+              <button type="button" class="progress-pr-row" onclick="HomeWorkoutApp.openExerciseProgress('${this.escapeHtml(rec.exerciseId)}')">
+                <div class="progress-pr-left">
+                  <span class="progress-pr-trophy">🏆</span>
+                  <div style="min-width: 0;">
+                    <div class="progress-pr-name">${this.escapeHtml(rec.name)}</div>
+                    ${dateStr ? `<div class="progress-pr-date">${this.escapeHtml(dateStr)}</div>` : ''}
+                  </div>
+                </div>
+                <div class="progress-pr-right">
+                  <div class="progress-pr-score">${this.escapeHtml(scoreStr)}</div>
+                  ${oneRmStr ? `<div class="progress-pr-1rm">${this.escapeHtml(oneRmStr)}</div>` : ''}
+                </div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  },
+
+  _getTodayDateInputValue() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  },
+
+  renderBodyWeightSection() {
+    const entries = HomeWorkoutStore.getBodyWeights();
+    const plan = HomeWorkoutStore.getPlan();
+    const goal = plan && plan.goal;
+
+    if (entries.length === 0) {
+      return `
+        <div class="progress-section-card" id="progressBodyWeightCard">
+          <div class="progress-section-head">
+            <h3 class="progress-section-title">Body Weight</h3>
+            <button type="button" class="progress-link-btn" id="logBodyWeightBtn" onclick="HomeWorkoutApp.openBodyWeightModal()">+ Log weight</button>
+          </div>
+          <p class="progress-empty-hint" style="margin-bottom: 4px;">No weigh-ins logged yet.</p>
+          <p class="bw-hint" style="margin-bottom: 0;">Weigh yourself once a week, same day, first thing in the morning.</p>
+        </div>
+      `;
+    }
+
+    const latest = entries[entries.length - 1];
+    const first = entries[0];
+    let changeText = `Logged ${this.formatMonthDay(latest.date)}`;
+    let isGoodTrend = false;
+
+    if (entries.length >= 2) {
+      const diff = Math.round((latest.kg - first.kg) * 10) / 10;
+      const sinceStr = this.formatMonthDay(first.date);
+      if (diff > 0) changeText = `+${diff} kg since ${sinceStr}`;
+      else if (diff < 0) changeText = `−${Math.abs(diff)} kg since ${sinceStr}`;
+      else changeText = `No change since ${sinceStr}`;
+      isGoodTrend = (goal === 'lose_weight' && diff < 0) || (goal === 'gain_weight' && diff > 0);
+    }
+
+    const strokeColor = isGoodTrend ? '#10B981' : 'var(--brand-blue)';
+    const points = entries.map(e => ({ date: e.date, value: e.kg }));
+    const ariaLabel = entries.length === 1
+      ? `Body weight ${latest.kg} kg on ${this.formatShortDate(latest.date)}`
+      : `Body weight ${latest.kg >= first.kg ? 'changed' : 'fell'} from ${first.kg} to ${latest.kg} kg over ${entries.length} entries`;
+
+    const chartHtml = this.renderSvgLineChart(points, {
+      unit: 'kg',
+      strokeColor,
+      ariaLabel,
+      chartId: 'body-weight',
+      singlePointMessage: 'Log another weigh-in to see a trend'
+    });
+
+    const entriesHtml = entries.slice().reverse().map(e => `
+      <div class="bw-entry-row" data-bw-date="${this.escapeHtml(e.date)}">
+        <span class="bw-entry-date">${this.escapeHtml(this.formatShortDate(e.date))}</span>
+        <span class="bw-entry-val">${this.escapeHtml(String(e.kg))} kg</span>
+        <button type="button" class="bw-delete-btn" aria-label="Delete weigh-in for ${this.escapeHtml(e.date)}"
+          onclick="HomeWorkoutApp.deleteBodyWeightEntry('${this.escapeHtml(e.date)}')">✕</button>
+      </div>
+    `).join('');
+
+    return `
+      <div class="progress-section-card" id="progressBodyWeightCard">
+        <div class="progress-section-head">
+          <h3 class="progress-section-title">Body Weight</h3>
+          <button type="button" class="progress-link-btn" id="logBodyWeightBtn" onclick="HomeWorkoutApp.openBodyWeightModal()">+ Log weight</button>
+        </div>
+        <div class="bw-summary-row">
+          <span class="bw-latest" id="bwLatestVal">${this.escapeHtml(String(latest.kg))} kg</span>
+          <span class="bw-change ${isGoodTrend ? 'good' : ''}" id="bwChangePill">${this.escapeHtml(changeText)}</span>
+        </div>
+        ${chartHtml}
+        <p class="bw-hint">Weigh yourself once a week, same day, first thing in the morning.</p>
+        <div class="bw-entries-list" id="bwEntriesList">
+          ${entriesHtml}
+        </div>
+      </div>
+    `;
+  },
+
+  openBodyWeightModal() {
+    const kgInput = document.getElementById('bodyWeightKgInput');
+    const dateInput = document.getElementById('bodyWeightDateInput');
+    const feedback = document.getElementById('bodyWeightFeedback');
+    if (feedback) {
+      feedback.style.display = 'none';
+      feedback.textContent = '';
+    }
+    const entries = HomeWorkoutStore.getBodyWeights();
+    const latest = entries.length > 0 ? entries[entries.length - 1] : null;
+    if (kgInput) kgInput.value = latest ? String(latest.kg) : '';
+    if (dateInput) dateInput.value = this._getTodayDateInputValue();
+
+    this.openModal('bodyWeightModalBackdrop', 'log-weight');
+  },
+
+  closeBodyWeightModal(fromPop = false) {
+    this.closeModal('bodyWeightModalBackdrop', fromPop);
+  },
+
+  submitBodyWeight() {
+    const kgInput = document.getElementById('bodyWeightKgInput');
+    const dateInput = document.getElementById('bodyWeightDateInput');
+    const feedback = document.getElementById('bodyWeightFeedback');
+
+    try {
+      HomeWorkoutStore.saveBodyWeight(kgInput ? kgInput.value : '', dateInput ? dateInput.value : '');
+      this.closeBodyWeightModal();
+      this.renderReportScreen();
+    } catch (err) {
+      if (feedback) {
+        feedback.textContent = err.message || 'Please enter a valid weight between 30 and 300 kg.';
+        feedback.style.display = 'block';
+      }
+    }
+  },
+
+  deleteBodyWeightEntry(dateStr) {
+    HomeWorkoutStore.deleteBodyWeight(dateStr);
+    this.renderReportScreen();
+  },
+
   async renderReportScreen() {
     const user = HomeWorkoutStore.getUser();
     const container = document.getElementById('reportScreenContent');
@@ -3227,50 +3721,84 @@ const HomeWorkoutApp = {
       if (!validIds.has(sid)) this.selectedLogIds.delete(sid);
     }
 
+    const plan = HomeWorkoutStore.getPlan();
+    const isWeightGoal = Boolean(plan && (plan.goal === 'lose_weight' || plan.goal === 'gain_weight'));
+    const bodyWeightHtml = this.renderBodyWeightSection();
+    const hasAny = allLogs.length > 0;
+
+    if (!hasAny) {
+      container.innerHTML = `
+        ${isWeightGoal ? bodyWeightHtml : ''}
+        <div class="progress-section-card" style="text-align: center; padding: 32px 18px;">
+          <p style="font-weight: 800; font-size: 0.95rem; color: var(--text-main); margin-bottom: 6px;">
+            Finish your first workout to see your progress here.
+          </p>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px;">
+            Your lifted weights, exercise charts and personal records will appear automatically.
+          </p>
+          <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 210px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.goToHome()">
+            <span>Go to Workouts</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+        </div>
+        ${!isWeightGoal ? bodyWeightHtml : ''}
+      `;
+      return;
+    }
+
     const self = this;
     const isSelectionMode = this.historySelectionMode;
+    const weeklyVol = HomeWorkoutStore.getWeeklyVolumeKg();
+    const loggedExercises = HomeWorkoutStore.getLoggedExercises();
+    const records = HomeWorkoutStore.getPersonalRecords();
 
     function renderLogCards(logsList) {
       if (!logsList || logsList.length === 0) return '';
       return logsList.map(l => {
         const timeStr = l.completedAt ? new Date(l.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         const dateStr = l.completedAt ? new Date(l.completedAt).toLocaleDateString() : '';
-        const exCount = l.exercises ? l.exercises.length : 0;
+        const exList = HomeWorkoutStore._getLogExercises(l);
+        const exCount = exList.length;
         const isSelected = self.selectedLogIds.has(String(l.id));
 
         return `
-          <div class="timeline-card ${isSelected ? 'selected' : ''}" style="${isSelectionMode ? 'cursor: pointer;' : ''}" onclick="${isSelectionMode ? `HomeWorkoutApp.toggleLogSelect('${l.id}')` : ''}">
+          <div class="timeline-card ${isSelected ? 'selected' : ''}" style="${isSelectionMode ? 'cursor: pointer;' : ''}" onclick="${isSelectionMode ? `HomeWorkoutApp.toggleLogSelect('${self.escapeHtml(l.id)}')` : ''}">
             <div style="display: flex; align-items: flex-start; gap: 12px;">
               ${isSelectionMode ? `
                 <div style="padding-top: 2px;">
-                  <input type="checkbox" class="log-select-checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); HomeWorkoutApp.toggleLogSelect('${l.id}')" style="width: 19px; height: 19px; accent-color: var(--brand-blue); cursor: pointer;">
+                  <input type="checkbox" class="log-select-checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); HomeWorkoutApp.toggleLogSelect('${self.escapeHtml(l.id)}')" style="width: 19px; height: 19px; accent-color: var(--brand-blue); cursor: pointer;">
                 </div>
               ` : ''}
               <div style="flex: 1; min-width: 0;">
                 <div class="timeline-card-header">
                   <div>
-                    <h4 style="font-weight: 800; font-size: 0.95rem; margin: 0; color: var(--text-main);">${l.challengeTitle || l.workout_title}</h4>
+                    <h4 style="font-weight: 800; font-size: 0.95rem; margin: 0; color: var(--text-main);">${self.escapeHtml(l.challengeTitle || l.workout_title || 'Workout')}</h4>
                     <div class="timeline-card-meta">
-                      ${dateStr} ${timeStr ? '• ' + timeStr : ''} • ${l.durationMinutes || 18} Min • ${l.caloriesBurned || 140} kcal
+                      ${self.escapeHtml(dateStr)} ${timeStr ? '• ' + self.escapeHtml(timeStr) : ''} • ${l.durationMinutes || 18} Min • ${l.caloriesBurned || 140} kcal
                     </div>
                   </div>
                   <span style="font-size: 0.85rem; font-weight: 800; color: #10B981;">✓ Done</span>
                 </div>
                 ${exCount > 0 ? `
-                  <button class="timeline-accordion-btn" onclick="event.stopPropagation(); HomeWorkoutApp.toggleTimelineAccordion('${l.id}')">
+                  <button class="timeline-accordion-btn" onclick="event.stopPropagation(); HomeWorkoutApp.toggleTimelineAccordion('${self.escapeHtml(l.id)}')">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
                     <span>View ${exCount} Exercises</span>
                   </button>
-                  <div class="timeline-exercises-list" id="tl-ex-${l.id}">
-                    ${l.exercises.map(ex => `
-                      <div class="timeline-ex-item">
-                        <span class="timeline-ex-item-dot"></span>
-                        <span>${ex.name}</span>
-                        ${ex.target ? `<span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">(🎯 ${ex.target})</span>` : ''}
-                      </div>
-                    `).join('')}
+                  <div class="timeline-exercises-list" id="tl-ex-${self.escapeHtml(l.id)}">
+                    ${exList.map(ex => {
+                      const setsSummary = self.formatExerciseSetsSummary(ex);
+                      return `
+                        <div class="timeline-ex-item">
+                          <span class="timeline-ex-item-dot"></span>
+                          <span>${self.escapeHtml(ex.name)}${setsSummary ? `: <span class="timeline-ex-sets">${self.escapeHtml(setsSummary)}</span>` : ''}</span>
+                          ${(!setsSummary && ex.target) ? `<span style="font-size: 0.7rem; color: var(--text-muted); font-weight: normal;">(🎯 ${self.escapeHtml(ex.target)})</span>` : ''}
+                        </div>
+                      `;
+                    }).join('')}
                   </div>
                 ` : ''}
               </div>
@@ -3280,95 +3808,86 @@ const HomeWorkoutApp = {
       }).join('');
     }
 
-    const hasAny = allLogs.length > 0;
-    const allSelected = hasAny && (this.selectedLogIds.size === allLogs.length);
+    const allSelected = this.selectedLogIds.size === allLogs.length;
     const selectedCount = this.selectedLogIds.size;
 
     let historySectionsHtml = '';
-    if (hasAny) {
-      if (timeline.today && timeline.today.length > 0) {
-        historySectionsHtml += `
-          <div class="timeline-group-header">⚡ Today's Sessions (${timeline.today.length})</div>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${renderLogCards(timeline.today)}
-          </div>
-        `;
-      }
-      if (timeline.yesterday && timeline.yesterday.length > 0) {
-        historySectionsHtml += `
-          <div class="timeline-group-header">📅 Yesterday / Last Day (${timeline.yesterday.length})</div>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${renderLogCards(timeline.yesterday)}
-          </div>
-        `;
-      }
-      if (timeline.this_week && timeline.this_week.length > 0) {
-        historySectionsHtml += `
-          <div class="timeline-group-header">🗓️ Earlier This Week (${timeline.this_week.length})</div>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${renderLogCards(timeline.this_week)}
-          </div>
-        `;
-      }
-      if (timeline.last_week && timeline.last_week.length > 0) {
-        historySectionsHtml += `
-          <div class="timeline-group-header">📆 Last Week (${timeline.last_week.length})</div>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${renderLogCards(timeline.last_week)}
-          </div>
-        `;
-      }
-      if (timeline.older && timeline.older.length > 0) {
-        historySectionsHtml += `
-          <div class="timeline-group-header">📦 Older Workouts (${timeline.older.length})</div>
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            ${renderLogCards(timeline.older)}
-          </div>
-        `;
-      }
-    } else {
-      historySectionsHtml = `
-        <div style="text-align: center; padding: 36px 16px; color: var(--text-muted); background: #FFF; border-radius: 16px; margin-top: 10px;">
-          <p style="font-weight: 700; margin-bottom: 6px;">No workout sessions logged yet</p>
-          <p style="font-size: 0.78rem; margin-bottom: 16px;">Complete your first workout to see your daily & weekly timeline!</p>
-          <button class="start-day-pill-btn" style="background: var(--brand-blue); color: #FFF; max-width: 200px; margin: 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" onclick="HomeWorkoutApp.goToHome()">
-            <span>Go to Workouts</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"></polyline>
-            </svg>
-          </button>
+    if (timeline.today && timeline.today.length > 0) {
+      historySectionsHtml += `
+        <div class="timeline-group-header">⚡ Today's Sessions (${timeline.today.length})</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${renderLogCards(timeline.today)}
+        </div>
+      `;
+    }
+    if (timeline.yesterday && timeline.yesterday.length > 0) {
+      historySectionsHtml += `
+        <div class="timeline-group-header">📅 Yesterday / Last Day (${timeline.yesterday.length})</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${renderLogCards(timeline.yesterday)}
+        </div>
+      `;
+    }
+    if (timeline.this_week && timeline.this_week.length > 0) {
+      historySectionsHtml += `
+        <div class="timeline-group-header">🗓️ Earlier This Week (${timeline.this_week.length})</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${renderLogCards(timeline.this_week)}
+        </div>
+      `;
+    }
+    if (timeline.last_week && timeline.last_week.length > 0) {
+      historySectionsHtml += `
+        <div class="timeline-group-header">📆 Last Week (${timeline.last_week.length})</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${renderLogCards(timeline.last_week)}
+        </div>
+      `;
+    }
+    if (timeline.older && timeline.older.length > 0) {
+      historySectionsHtml += `
+        <div class="timeline-group-header">📦 Older Workouts (${timeline.older.length})</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          ${renderLogCards(timeline.older)}
         </div>
       `;
     }
 
     container.innerHTML = `
-      <div style="background: #FFFFFF; border-radius: 18px; padding: 20px; box-shadow: var(--shadow-card); margin-bottom: 12px;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-          <div>
-            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">WORKOUTS</span>
-            <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${allLogs.length}</div>
+      <div class="progress-summary-card">
+        <div class="progress-summary-grid">
+          <div class="progress-stat-cell">
+            <span class="progress-stat-label">Workouts</span>
+            <div class="progress-stat-val" id="progressStatWorkouts">${allLogs.length}</div>
           </div>
-          <div>
-            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">STREAK</span>
-            <div style="font-size: 1.6rem; font-weight: 800; color: var(--accent-flame);">${user.streakCount} Days</div>
+          <div class="progress-stat-cell">
+            <span class="progress-stat-label">Streak</span>
+            <div class="progress-stat-val flame" id="progressStatStreak">${user.streakCount} Days</div>
           </div>
-          <div>
-            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 700;">WEEKLY GOAL</span>
-            <div style="font-size: 1.6rem; font-weight: 800; color: var(--brand-blue);">${user.weeklyCompletedCount}/${user.weeklyGoalTarget}</div>
+          <div class="progress-stat-cell">
+            <span class="progress-stat-label">Weekly Goal</span>
+            <div class="progress-stat-val" id="progressStatGoal">${user.weeklyCompletedCount}/${user.weeklyGoalTarget}</div>
+          </div>
+          <div class="progress-stat-cell">
+            <span class="progress-stat-label">Lifted This Week</span>
+            <div class="progress-stat-val dark" id="progressStatWeeklyKg">${weeklyVol.toLocaleString()} kg</div>
           </div>
         </div>
       </div>
 
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <h3 class="section-bold-title" style="font-size: 1.05rem; margin: 0;">Workout Timeline</h3>
-        ${hasAny ? `
-          <button onclick="HomeWorkoutApp.toggleHistorySelectMode()" style="background: ${isSelectionMode ? 'var(--brand-blue)' : '#EFF6FF'}; color: ${isSelectionMode ? '#FFF' : 'var(--brand-blue)'}; border: 1px solid rgba(0, 82, 255, 0.25); font-size: 0.72rem; font-weight: 800; padding: 5px 12px; border-radius: 9999px; cursor: pointer;">
-            ${isSelectionMode ? '✕ Cancel' : '☑ Manage / Select'}
-          </button>
-        ` : ''}
+      ${isWeightGoal ? bodyWeightHtml : ''}
+      ${this.renderExerciseProgressSection(loggedExercises)}
+      ${this.renderPersonalRecordsSection(records)}
+      ${!isWeightGoal ? bodyWeightHtml : ''}
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; margin-top: 6px;">
+        <h3 class="section-bold-title" style="font-size: 1.05rem; margin: 0;">Workout History</h3>
+        <button onclick="HomeWorkoutApp.toggleHistorySelectMode()" style="background: ${isSelectionMode ? 'var(--brand-blue)' : '#EFF6FF'}; color: ${isSelectionMode ? '#FFF' : 'var(--brand-blue)'}; border: 1px solid rgba(0, 82, 255, 0.25); font-size: 0.72rem; font-weight: 800; padding: 5px 12px; border-radius: 9999px; cursor: pointer;">
+          ${isSelectionMode ? '✕ Cancel' : '☑ Manage / Select'}
+        </button>
       </div>
 
-      ${isSelectionMode && hasAny ? `
+      ${isSelectionMode ? `
         <div class="timeline-manage-toolbar">
           <div style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" id="masterSelectAllCheck" ${allSelected ? 'checked' : ''} onchange="HomeWorkoutApp.toggleSelectAllHistory(this.checked)" style="width: 18px; height: 18px; accent-color: var(--brand-blue); cursor: pointer;">

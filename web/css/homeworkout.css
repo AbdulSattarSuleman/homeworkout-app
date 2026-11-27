@@ -3025,6 +3025,447 @@ body {
   text-align: left;
 }
 
+/* ======================================================== */
+/* PLAN 3B: PROGRESS TAB (CHARTS, RECORDS, BODY WEIGHT)     */
+/* ======================================================== */
+.progress-summary-card {
+  background: #FFFFFF;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 14px;
+}
+
+.progress-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.progress-stat-cell {
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.progress-stat-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.progress-stat-val {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: var(--brand-blue);
+  margin-top: 2px;
+}
+
+.progress-stat-val.flame {
+  color: var(--accent-flame);
+}
+
+.progress-stat-val.dark {
+  color: var(--text-main);
+}
+
+.progress-section-card {
+  background: #FFFFFF;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 14px;
+}
+
+.progress-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.progress-section-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.progress-link-btn {
+  background: var(--brand-blue-light);
+  color: var(--brand-blue);
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 5px 11px;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-ex-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: #FFFFFF;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progress-ex-row:active {
+  background: var(--surface-subtle);
+}
+
+.progress-ex-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.progress-ex-name {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-ex-meta {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.progress-ex-chevron {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-light);
+  flex-shrink: 0;
+}
+
+.progress-empty-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 2px 0;
+}
+
+.timeline-ex-sets {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--brand-blue);
+}
+
+/* ======================================================== */
+/* FEATURE 3: SVG LINE CHART & EXERCISE PROGRESS DETAIL     */
+/* ======================================================== */
+.progress-detail-sheet {
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.progress-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.progress-headline-pill {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 5px 11px;
+  border-radius: var(--radius-full);
+  background: var(--brand-blue-light);
+  color: var(--brand-blue);
+  margin-bottom: 12px;
+}
+
+.progress-headline-pill.positive {
+  background: #ECFDF5;
+  color: #059669;
+}
+
+.progress-chart-box {
+  background: var(--canvas-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 8px 8px;
+  margin-bottom: 12px;
+}
+
+.progress-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.chart-grid-line {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.chart-axis-label {
+  font-family: var(--font-family);
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--text-muted);
+}
+
+.chart-dot {
+  cursor: pointer;
+  transition: r 0.12s ease;
+}
+
+.chart-dot-hit {
+  cursor: pointer;
+  fill: transparent;
+}
+
+.chart-readout {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text-main);
+  text-align: center;
+  min-height: 18px;
+}
+
+.chart-single-hint {
+  margin-top: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.progress-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.progress-session-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  font-size: 0.82rem;
+}
+
+.progress-session-date {
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.progress-session-sets {
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* ======================================================== */
+/* FEATURE 4: PERSONAL RECORDS LIST                         */
+/* ======================================================== */
+.progress-pr-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.progress-pr-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.progress-pr-trophy {
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+
+.progress-pr-name {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-pr-date {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.progress-pr-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.progress-pr-score {
+  font-size: 0.84rem;
+  font-weight: 900;
+  color: #92400E;
+}
+
+.progress-pr-1rm {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #B45309;
+}
+
+/* ======================================================== */
+/* FEATURE 5: BODY WEIGHT TRACKING                          */
+/* ======================================================== */
+.bw-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.bw-latest {
+  font-size: 1.55rem;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+.bw-change {
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: var(--brand-blue-light);
+  color: var(--brand-blue);
+}
+
+.bw-change.good {
+  background: #ECFDF5;
+  color: #059669;
+}
+
+.bw-hint {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 6px;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.bw-entries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.bw-entry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  font-size: 0.82rem;
+}
+
+.bw-entry-date {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.bw-entry-val {
+  font-weight: 800;
+  color: var(--text-main);
+  margin-left: auto;
+}
+
+.bw-delete-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bw-input {
+  width: 100%;
+  background: #FFFFFF;
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.bw-input:focus {
+  outline: none;
+  border-color: var(--brand-blue);
+}
+
+.bw-feedback {
+  background: #FEE2E2;
+  color: #991B1B;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+
+
+
+
 
 
 
