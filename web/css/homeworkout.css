@@ -2850,6 +2850,17 @@ body {
   color: #FFFFFF;
 }
 
+/* "Rest over · Go!" alert: green and pulsing so it's noticed even without sound */
+.runner-rest-banner.rest-over {
+  background: #16A34A;
+  animation: restOverPulse 0.9s ease-in-out 3;
+}
+
+@keyframes restOverPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5); }
+  50% { transform: scale(1.03); box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); }
+}
+
 .runner-rest-actions {
   display: flex;
   align-items: center;

@@ -209,8 +209,18 @@ const HomeWorkoutApp = {
         const modal = document.getElementById('workoutRunnerModal');
         if (document.visibilityState === 'visible' && modal && modal.classList.contains('active') && this.activeWorkout && this.activeWorkout.isPlanWorkout) {
           this.requestWakeLock();
+          // Rest finished while the phone was locked? Show/beep now instead of never
+          if (this.restEndsAt) this.tickRestTimer();
         }
       });
+
+      // Any tap on the workout screen keeps sound allowed (phones switch it off after locking)
+      const runner = document.getElementById('workoutRunnerModal');
+      if (runner) {
+        runner.addEventListener('pointerdown', () => {
+          if (this.activeWorkout && this.activeWorkout.isPlanWorkout) this.unlockAudioContext();
+        }, { passive: true });
+      }
     }
   },
 
@@ -2053,25 +2063,81 @@ const HomeWorkoutApp = {
     this.updateRunnerNextButton();
   },
 
+  // Rest timer: counts down to a fixed end time (restEndsAt), so it stays correct when
+  // the phone locks or the browser pauses the page, and it keeps running when you move
+  // to the next exercise. Only Skip, finishing or quitting the workout stops it.
   startRestTimer(seconds) {
     this.stopRestTimer();
-    this.restSecondsRemaining = Math.max(1, Number(seconds) || 60);
+    this.restEndsAt = Date.now() + Math.max(1, Number(seconds) || 60) * 1000;
+    this.restPausedAt = this.isPaused ? Date.now() : null;
+    this.restSecondsRemaining = this.getRestRemaining();
+    this._restCountdownCued = {};
     this.renderRestBanner();
-    this.restInterval = setInterval(() => {
-      if (this.isPaused) return;
-      this.restSecondsRemaining--;
-      if (this.restSecondsRemaining <= 0) {
-        this.stopRestTimer();
-        this.playRestDoneCue();
-      } else {
-        this.updateRestDisplay();
+    this.restInterval = setInterval(() => this.tickRestTimer(), 250);
+  },
+
+  getRestRemaining() {
+    if (!this.restEndsAt) return 0;
+    const now = this.restPausedAt || Date.now();
+    return Math.max(0, Math.ceil((this.restEndsAt - now) / 1000));
+  },
+
+  tickRestTimer() {
+    if (!this.restEndsAt || this.restPausedAt) return;
+    const left = this.getRestRemaining();
+    if (left !== this.restSecondsRemaining) {
+      this.restSecondsRemaining = left;
+      this.updateRestDisplay();
+      // Short "get ready" pips at 3, 2 and 1 seconds left
+      if (left > 0 && left <= 3 && !this._restCountdownCued[left] && !document.hidden) {
+        this._restCountdownCued[left] = true;
+        this.playTone([{ freq: 660, start: 0, dur: 0.1 }], 0.6);
       }
-    }, 1000);
+    }
+    if (left <= 0) this.finishRestTimer();
+  },
+
+  finishRestTimer() {
+    this.clearRestInterval();
+    this.restEndsAt = 0;
+    this.restPausedAt = null;
+    this.restSecondsRemaining = 0;
+    this.playRestDoneCue();
+    this.showRestOverBanner();
+  },
+
+  clearRestInterval() {
+    if (this.restInterval) {
+      clearInterval(this.restInterval);
+      this.restInterval = null;
+    }
+  },
+
+  // Visible alert as well as the sound: works even when the phone is on silent
+  showRestOverBanner() {
+    const banner = document.getElementById('runnerRestBanner');
+    if (!banner) return;
+    banner.classList.add('rest-over');
+    banner.style.display = 'flex';
+    banner.innerHTML = `
+      <div class="runner-rest-left">
+        <span class="runner-rest-label">Rest over</span>
+        <span class="runner-rest-num">Go! 💪</span>
+      </div>
+      <div class="runner-rest-actions">
+        <button type="button" class="runner-rest-btn skip" onclick="HomeWorkoutApp.stopRestTimer()">OK</button>
+      </div>
+    `;
+    clearTimeout(this._restOverTimeout);
+    this._restOverTimeout = setTimeout(() => {
+      if (banner.classList.contains('rest-over')) this.stopRestTimer();
+    }, 8000);
   },
 
   renderRestBanner() {
     const banner = document.getElementById('runnerRestBanner');
     if (!banner) return;
+    banner.classList.remove('rest-over');
     if (this.restSecondsRemaining <= 0) {
       banner.style.display = 'none';
       banner.innerHTML = '';
@@ -2104,11 +2170,14 @@ const HomeWorkoutApp = {
   },
 
   adjustRestTimer(delta) {
-    if (!this.restInterval && this.restSecondsRemaining <= 0) return;
-    this.restSecondsRemaining = Math.max(0, this.restSecondsRemaining + delta);
-    if (this.restSecondsRemaining <= 0) {
+    if (!this.restEndsAt) return;
+    this.restEndsAt += delta * 1000;
+    if (delta > 0) this._restCountdownCued = {};
+    const left = this.getRestRemaining();
+    if (left <= 0) {
       this.stopRestTimer();
     } else {
+      this.restSecondsRemaining = left;
       this.updateRestDisplay();
     }
   },
@@ -2118,18 +2187,21 @@ const HomeWorkoutApp = {
   },
 
   stopRestTimer() {
-    if (this.restInterval) {
-      clearInterval(this.restInterval);
-      this.restInterval = null;
-    }
+    this.clearRestInterval();
+    clearTimeout(this._restOverTimeout);
+    this.restEndsAt = 0;
+    this.restPausedAt = null;
     this.restSecondsRemaining = 0;
     const banner = document.getElementById('runnerRestBanner');
     if (banner) {
+      banner.classList.remove('rest-over');
       banner.style.display = 'none';
       banner.innerHTML = '';
     }
   },
 
+  // Browsers only allow sound after a tap. This is called on every tap inside the
+  // workout screen, which also wakes the sound up again after the phone was locked.
   unlockAudioContext() {
     if (typeof window === 'undefined') return null;
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -2138,7 +2210,7 @@ const HomeWorkoutApp = {
       if (!this.audioCtx) {
         this.audioCtx = new AudioCtx();
       }
-      if (this.audioCtx.state === 'suspended') {
+      if (this.audioCtx.state === 'suspended' || this.audioCtx.state === 'interrupted') {
         this.audioCtx.resume().catch(() => {});
       }
       return this.audioCtx;
@@ -2147,30 +2219,46 @@ const HomeWorkoutApp = {
     }
   },
 
-  playRestDoneCue() {
-    this._lastBeepAt = Date.now();
-    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-      try { navigator.vibrate([200, 100, 200]); } catch (e) {}
-    }
+  // Plays short beeps: notes = [{ freq, start (s), dur (s) }]
+  playTone(notes, volume = 0.9) {
     const ctx = this.unlockAudioContext();
-    if (!ctx) return;
+    if (!ctx) return false;
     try {
-      const playPip = (offset, freq, duration) => {
+      const t0 = ctx.currentTime + 0.02;
+      notes.forEach(n => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
+        const start = t0 + n.start;
+        const end = start + n.dur;
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
-        gain.gain.setValueAtTime(0.001, ctx.currentTime + offset);
-        gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + offset + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + offset + duration);
+        osc.frequency.setValueAtTime(n.freq, start);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+        gain.gain.setValueAtTime(volume, Math.max(start + 0.02, end - 0.03));
+        gain.gain.exponentialRampToValueAtTime(0.0001, end);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + offset);
-        osc.stop(ctx.currentTime + offset + duration + 0.02);
-      };
-      playPip(0, 880, 0.16);
-      playPip(0.22, 1046.5, 0.22);
-    } catch (e) {}
+        osc.start(start);
+        osc.stop(end + 0.02);
+      });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  playRestDoneCue() {
+    this._lastBeepAt = Date.now();
+    // Vibration works on Android; iPhones don't allow websites to vibrate
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try { navigator.vibrate([300, 120, 300, 120, 500]); } catch (e) {}
+    }
+    // Beep-beep-BEEEP, loud enough to hear in a gym
+    this.playTone([
+      { freq: 880, start: 0, dur: 0.18 },
+      { freq: 880, start: 0.28, dur: 0.18 },
+      { freq: 1320, start: 0.56, dur: 0.5 }
+    ], 0.9);
   },
 
   requestWakeLock() {
@@ -2453,7 +2541,6 @@ const HomeWorkoutApp = {
     delete replacement.loggedSets;
 
     this.activeWorkout.exercises[this.activeExerciseIndex] = replacement;
-    this.stopRestTimer();
     this.closePlanSwapSheet();
     this.loadCurrentExercise();
   },
@@ -2494,6 +2581,15 @@ const HomeWorkoutApp = {
 
   toggleTimerPause() {
     this.isPaused = !this.isPaused;
+    // Pause/resume the rest timer too (it counts to a fixed end time)
+    if (this.restEndsAt) {
+      if (this.isPaused) {
+        this.restPausedAt = Date.now();
+      } else if (this.restPausedAt) {
+        this.restEndsAt += Date.now() - this.restPausedAt;
+        this.restPausedAt = null;
+      }
+    }
     const pauseBtn = document.getElementById('runnerPauseBtn');
     if (pauseBtn) {
       pauseBtn.innerHTML = this.isPaused
@@ -2504,14 +2600,14 @@ const HomeWorkoutApp = {
 
   prevExercise() {
     if (this.activeExerciseIndex > 0) {
-      this.stopRestTimer();
+      // The rest timer keeps running: you still rest after your last set
       this.activeExerciseIndex--;
       this.loadCurrentExercise();
     }
   },
 
   nextExercise() {
-    this.stopRestTimer();
+    // The rest timer keeps running across exercises (it is stopped when the workout ends)
     this.activeExerciseIndex++;
     if (this.activeExerciseIndex < this.activeWorkout.exercises.length) {
       this.loadCurrentExercise();
