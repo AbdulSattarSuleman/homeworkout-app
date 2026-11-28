@@ -11,17 +11,17 @@
   "description": "Comprehensive Home Workout & Calisthenics Training Application",
   "icons": [
     {
-      "src": "assets/icons/icon-192.png",
+      "src": "assets/img/logo-icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "assets/icons/icon-512.png",
+      "src": "assets/img/logo-icon.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "assets/icons/icon-maskable-512.png",
+      "src": "assets/img/logo-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

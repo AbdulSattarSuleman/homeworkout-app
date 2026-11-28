@@ -2,7 +2,7 @@
 // IMPORTANT: when you change any ?v= number in web/index.html, change the SAME
 // number in PRECACHE_URLS below AND bump CACHE_NAME, or offline mode will miss files.
 // Whenever index.html or referenced assets change, bump the cache version here.
-const CACHE_NAME = 'hw-app-v3.19';
+const CACHE_NAME = 'hw-app-v3.20';
 const RUNTIME_CACHE = 'hw-runtime-v1';
 const RUNTIME_CACHE_LIMIT = 120; // pictures + animations kept for offline use
 
@@ -19,10 +19,18 @@ const PRECACHE_URLS = [
   'js/telemetry.js?v=3.15',
   'js/homeworkout.js?v=3.19',
   'data/exercises_database.json',
-  'assets/images/app_icon.png',
-  'assets/icons/icon-192.png',
-  'assets/icons/icon-512.png',
-  'assets/icons/icon-maskable-512.png',
+  'assets/img/logo-icon.png',
+  'assets/img/logo-icon-192.png',
+  'assets/img/badge-bronze.png',
+  'assets/img/badge-silver.png',
+  'assets/img/badge-gold.png',
+  'assets/img/badge-blue.png',
+  'assets/img/hero-banner.png',
+  'assets/img/workout-1.png',
+  'assets/img/workout-2.png',
+  'assets/img/workout-3.png',
+  'assets/img/workout-4.png',
+  'assets/img/workout-5.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.48.1'
 ];
 
